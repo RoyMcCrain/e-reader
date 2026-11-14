@@ -147,3 +147,15 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+.firecrawl/
+.void/
+.wrangler/
+.cloudflare/
+.void-wrangler.jsonc
+wrangler.jsonc
+wrangler.json
+playwright-report/
+test-results/
+*.epub
+*.cbz
+*.zip

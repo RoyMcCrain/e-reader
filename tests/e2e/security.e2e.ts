@@ -1,0 +1,120 @@
+import { expect, test } from '@playwright/test'
+import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
+
+const makeEpub = async () => {
+  const writer = new ZipWriter(new BlobWriter())
+  const files = {
+    mimetype: 'application/epub+zip',
+    'META-INF/container.xml':
+      '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+    'book.opf':
+      '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">security-test</dc:identifier><dc:title>安全確認</dc:title><dc:language>ja</dc:language></metadata><manifest><item id="page" href="page.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="page"/></spine></package>',
+    'page.xhtml':
+      '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>安全確認</title><style>@import url(https://attacker.invalid/import.css); .picture { background-image: url(https://attacker.invalid/background) } .publisher { color: rgb(1, 2, 3) }</style><meta http-equiv="refresh" content="0;url=https://attacker.invalid/refresh"/></head><body><script>parent.alert("script")</script><p class="publisher" onclick="parent.alert(1)"><ruby>本文<rt>ほんぶん</rt></ruby></p><img src="https://attacker.invalid/image" srcset="https://attacker.invalid/large 2x" onerror="parent.alert(2)"/><a href="java&#x09;script:parent.alert(3)">危険リンク</a><a ping="https://attacker.invalid/ping" href="data:text/html,attack">危険データリンク</a><img class="embedded" src="data:image/png;base64,iVBORw0KGgo="/><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>alert(4)</script><foreignObject><img src="https://attacker.invalid/foreign"/></foreignObject><path d="M0 0h10v10z" fill="url(#gradient)"/><defs><linearGradient id="gradient"><stop offset="0" stop-color="red"/></linearGradient></defs><image href="data:image/png;base64,iVBORw0KGgo=" width="1" height="1"/><text x="1" y="8">絵</text></svg></body></html>',
+  }
+  for (const [name, content] of Object.entries(files))
+    await writer.add(name, new TextReader(content))
+  return new Uint8Array(await (await writer.close()).arrayBuffer())
+}
+
+test('EPUB keeps publisher layout and illustration while blocking active content and fetches', async ({
+  page,
+}) => {
+  const requests: string[] = []
+  const pageErrors: string[] = []
+  let dialogs = 0
+  let localOrigin = ''
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('request', (request) => {
+    const url = request.url()
+    if (localOrigin && !url.startsWith('blob:') && !url.startsWith('data:')) {
+      try {
+        if (new URL(url).origin !== localOrigin) requests.push(url)
+      } catch {
+        requests.push(url)
+      }
+    }
+  })
+  await page.route('**/*', async (route) => {
+    const url = route.request().url()
+    let isLocal = false
+    try {
+      isLocal = new URL(url).origin === localOrigin
+    } catch {}
+    if (
+      !localOrigin ||
+      isLocal ||
+      url.startsWith('blob:') ||
+      url.startsWith('data:')
+    )
+      await route.continue()
+    else await route.abort()
+  })
+  page.on('dialog', (dialog) => {
+    dialogs += 1
+    void dialog.dismiss()
+  })
+  await page.goto('/')
+  localOrigin = new URL(page.url()).origin
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'security.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeEpub()),
+  })
+  await expect(page.getByText('security.epub')).toBeVisible()
+  const foliate = page.locator('foliate-view')
+  await expect(foliate).toHaveCount(1)
+  await expect
+    .poll(() =>
+      foliate.evaluate((element) => {
+        const documents = (
+          element as HTMLElement & {
+            renderer: { getContents(): Array<{ doc: Document }> }
+          }
+        ).renderer.getContents()
+        const doc = documents[0]?.doc
+        if (!doc) return null
+        return {
+          ruby: doc.querySelector('ruby rt')?.textContent,
+          path: doc.querySelector('svg path')?.getAttribute('d'),
+          fill: doc.querySelector('svg path')?.getAttribute('fill'),
+          svgImage: doc.querySelector('svg image')?.getAttribute('href'),
+          embeddedImage: doc.querySelector('img.embedded')?.getAttribute('src'),
+          text: doc.querySelector('svg text')?.textContent,
+          active: doc.querySelectorAll(
+            'script, foreignObject, animate, animateMotion, animateTransform, set, discard, [onclick], [onerror], meta[http-equiv="refresh"], [ping]',
+          ).length,
+          dangerous: [...doc.querySelectorAll('[href], [src], [srcset]')].some(
+            (element) =>
+              ['href', 'src', 'srcset'].some((name) =>
+                /attacker\.invalid|javascript:|data:text\/html/i.test(
+                  element.getAttribute(name) ?? '',
+                ),
+              ),
+          ),
+          publisherStyle: doc.defaultView?.getComputedStyle(
+            doc.querySelector('.publisher')!,
+          ).color,
+          csp: doc
+            .querySelector('head meta[http-equiv="Content-Security-Policy"]')
+            ?.getAttribute('content'),
+        }
+      }),
+    )
+    .toEqual({
+      ruby: 'ほんぶん',
+      path: 'M0 0h10v10z',
+      fill: 'url(#gradient)',
+      svgImage: 'data:image/png;base64,iVBORw0KGgo=',
+      embeddedImage: 'data:image/png;base64,iVBORw0KGgo=',
+      text: '絵',
+      active: 0,
+      dangerous: false,
+      publisherStyle: 'rgb(1, 2, 3)',
+      csp: expect.stringContaining("default-src 'none'"),
+    })
+  expect(requests).toEqual([])
+  expect(dialogs).toBe(0)
+  expect(pageErrors).toEqual([])
+})

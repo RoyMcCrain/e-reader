@@ -1,0 +1,155 @@
+.reader {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f6f3eb;
+  color: #292d27;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.toolbar,
+.footer {
+  height: 58px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  gap: 14px;
+  border-bottom: 1px solid #e2dfd5;
+}
+.footer {
+  height: 64px;
+  border-bottom: 0;
+  border-top: 1px solid #e2dfd5;
+}
+.toolbar button,
+.footer button,
+.toc button {
+  border: 1px solid #d8d9ce;
+  border-radius: 9px;
+  background: #fbfaf6;
+  color: #3b4b39;
+  padding: 9px 13px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.bookTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.pages {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: pinch-zoom;
+}
+.pages foliate-view {
+  height: 100%;
+  width: 100%;
+  display: block;
+}
+.pages :global(foliate-view) {
+  height: 100%;
+  width: 100%;
+}
+.pageImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+.message,
+.error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 15px;
+  background: #f6f3ebdd;
+}
+.error {
+  color: #a6372c;
+}
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #687363;
+  flex: 1;
+  max-width: 520px;
+}
+.progress > div {
+  height: 3px;
+  background: #dedfd5;
+  flex: 1;
+  border-radius: 5px;
+}
+.progress i {
+  height: 100%;
+  display: block;
+  background: #71846d;
+  border-radius: 5px;
+}
+.toc {
+  position: absolute;
+  z-index: 5;
+  right: 10px;
+  top: 62px;
+  max-height: 60dvh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: #faf9f5;
+  box-shadow: 0 6px 24px #0002;
+  border-radius: 12px;
+}
+.toc button {
+  text-align: left;
+}
+.subToc {
+  padding-left: 12px;
+}
+.hint {
+  margin: 0;
+  padding: 4px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: #687363;
+}
+.pages :global(iframe) {
+  border: 0;
+}
+@media (max-width: 500px) {
+  .toolbar {
+    height: 52px;
+    padding: 0 9px;
+    gap: 7px;
+  }
+  .toolbar button,
+  .footer button {
+    padding: 8px 9px;
+    font-size: 12px;
+  }
+  .footer {
+    height: 57px;
+    padding: 0 12px;
+  }
+  .bookTitle {
+    font-size: 10px;
+  }
+  .hint {
+    font-size: 10px;
+  }
+}
