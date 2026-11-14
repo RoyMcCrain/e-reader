@@ -1,7 +1,8 @@
 import type { FoliateViewElement } from 'foliate-js/view.js'
+import { bindEpubSwipe } from './epub-swipe'
 
 type Direction = 'rtl' | 'ltr'
-type Turn = (next: boolean) => void
+type Turn = (next: boolean, swipeDirection?: 'left' | 'right') => void
 type Point = { x: number; y: number }
 
 const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
@@ -48,7 +49,7 @@ const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
     window.setTimeout(() => {
       suppressClick = false
     }, 500)
-    turn(direction === 'rtl' ? dx > 0 : dx < 0)
+    turn(direction === 'rtl' ? dx > 0 : dx < 0, dx < 0 ? 'left' : 'right')
   }
   const onCancel = (event: Event) => {
     event.stopImmediatePropagation()
@@ -162,7 +163,9 @@ export const bindHostInput = (
   direction: Direction,
   turn: Turn,
 ) => {
-  const removeSwipe = bindSwipe(host.ownerDocument, direction, turn)
+  const removeSwipe = host.querySelector('foliate-view')
+    ? () => undefined
+    : bindSwipe(host.ownerDocument, direction, turn)
   const removeKeys = bindKeys(host.ownerDocument, direction, turn)
   const click = (event: MouseEvent) => {
     if (ignoredClick(event)) return
@@ -185,17 +188,21 @@ export const bindEpubInput = (
   direction: Direction,
   turn: Turn,
 ) => {
-  const docs = new Set<Document>()
-  const remove: (() => void)[] = []
+  const docs = new Map<Document, () => void>()
+  const swipe = bindEpubSwipe(view, host, direction, turn)
   const bind = (doc: Document) => {
     if (docs.has(doc)) return
-    docs.add(doc)
-    // Prevent native page panning from competing with discrete reader gestures.
+    // The parent touch-action does not apply inside the EPUB iframe.
     doc.documentElement.style.touchAction = 'pinch-zoom'
     doc.body.style.touchAction = 'pinch-zoom'
-    remove.push(bindKeys(doc, direction, turn))
-    remove.push(bindEpubClick(doc, host, direction, turn))
-    remove.push(bindSwipe(doc, direction, turn))
+    const removeKeys = bindKeys(doc, direction, turn)
+    const removeClick = bindEpubClick(doc, host, direction, turn)
+    const removeSwipe = swipe.attach(doc)
+    docs.set(doc, () => {
+      removeKeys()
+      removeClick()
+      removeSwipe()
+    })
   }
   const load = (event: Event) =>
     bind((event as CustomEvent<{ doc: Document }>).detail.doc)
@@ -203,6 +210,8 @@ export const bindEpubInput = (
   view.renderer?.getContents().forEach(({ doc }) => bind(doc))
   return () => {
     view.removeEventListener('load', load)
-    remove.forEach((unbind) => unbind())
+    docs.forEach((unbind) => unbind())
+    docs.clear()
+    swipe.close()
   }
 }

@@ -1,6 +1,55 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
+test('a ZIP swipe animates the incoming page in its travel direction', async ({
+  page,
+}) => {
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZt8AAAAASUVORK5CYII=',
+    'base64',
+  )
+  const writer = new ZipWriter(new BlobWriter())
+  await writer.add('one.png', new Uint8ArrayReader(pixel))
+  await writer.add('two.png', new Uint8ArrayReader(pixel))
+  const archive = new Uint8Array(await (await writer.close()).arrayBuffer())
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'comic.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(archive),
+  })
+  await expect(page.getByRole('img', { name: '画像 1 / 2' })).toBeVisible()
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: 300, y: 400 }],
+  })
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ x: 100, y: 400 }],
+  })
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  })
+  await expect(page.getByRole('img', { name: '画像 2 / 2' })).toBeVisible()
+  await expect
+    .poll(() =>
+      page.locator('img').evaluate((image) =>
+        image.getAnimations().some((animation) => {
+          const frames = (
+            animation.effect as KeyframeEffect | null
+          )?.getKeyframes()
+          const transform = frames?.[0]?.transform
+          return typeof transform === 'string' && transform.includes('32px')
+        }),
+      ),
+    )
+    .toBe(true)
+  await cdp.detach()
+})
+
 test('landing is usable on desktop and mobile', async ({ page }) => {
   await page.goto('/')
   await expect(

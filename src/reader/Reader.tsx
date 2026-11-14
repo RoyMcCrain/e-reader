@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   BlobReader,
   BlobWriter,
@@ -16,6 +16,7 @@ import { bindEpubInput, bindHostInput } from './input'
 import styles from './Reader.module.css'
 import { openImageArchive } from './archive'
 import { secureDocument } from './security'
+import { animatePage, type SwipeDirection } from './motion'
 
 interface ReaderProps {
   file: File
@@ -87,7 +88,7 @@ const initializeEpub = async (
   host: HTMLElement,
   progress: (value: number) => void,
   isCancelled: () => boolean,
-  turn: (next: boolean) => void,
+  turn: (next: boolean, swipeDirection?: SwipeDirection) => void,
 ): Promise<Session> => {
   let view: FoliateViewElement | null = null
   let removeInput: (() => void) | undefined
@@ -132,7 +133,7 @@ const loadEpub = async (
   host: HTMLElement,
   progress: (value: number) => void,
   isCancelled: () => boolean,
-  turn: (next: boolean) => void,
+  turn: (next: boolean, swipeDirection?: SwipeDirection) => void,
 ): Promise<Session> => {
   const [module] = await Promise.all([
     import('foliate-js/epub.js'),
@@ -219,6 +220,8 @@ export const Reader = ({ file, onClose }: ReaderProps) => {
   const [archive, setArchive] = useState<Archive | null>(null)
   const [page, setPage] = useState(0)
   const [imageUrl, setImageUrl] = useState('')
+  const animation = useRef<Animation | null>(null)
+  const pendingSwipe = useRef<SwipeDirection | null>(null)
   const [toc, setToc] = useState<TocItem[]>([])
   const [showToc, setShowToc] = useState(false)
   const enqueue = (action: () => Promise<void>) => {
@@ -235,14 +238,18 @@ export const Reader = ({ file, onClose }: ReaderProps) => {
               : 'ページを表示できませんでした。',
           )
       })
+    return queue.current
   }
-  const turn = (next: boolean) =>
+  const turn = (next: boolean, swipeDirection?: SwipeDirection) =>
     enqueue(async () => {
+      animation.current?.cancel()
+      animation.current = null
+      pendingSwipe.current = null
       const current = session.current
       if (!current) return
-      if (current.kind === 'epub')
+      if (current.kind === 'epub') {
         await (next ? current.view.next() : current.view.prev())
-      else {
+      } else {
         const destination = Math.max(
           0,
           Math.min(
@@ -255,8 +262,10 @@ export const Reader = ({ file, onClose }: ReaderProps) => {
         setPage(destination)
         const request = ++imageRequest.current
         const url = await current.archive.getUrl(destination)
-        if (request === imageRequest.current && current === session.current)
+        if (request === imageRequest.current && current === session.current) {
+          pendingSwipe.current = swipeDirection ?? null
           setImageUrl(url)
+        }
         setProgress(
           Math.round(((destination + 1) / current.archive.names.length) * 100),
         )
@@ -325,11 +334,25 @@ export const Reader = ({ file, onClose }: ReaderProps) => {
     })
     return () => {
       cancelled = true
+      animation.current?.cancel()
+      animation.current = null
+      pendingSwipe.current = null
       if (generation.current === currentGeneration) generation.current += 1
       session.current = null
       if (opened) void dispose(opened)
     }
   }, [file])
+
+  useLayoutEffect(() => {
+    const swipeDirection = pendingSwipe.current
+    pendingSwipe.current = null
+    if (swipeDirection)
+      animatePage(
+        host.current?.querySelector('img') ?? null,
+        swipeDirection,
+        animation,
+      )
+  }, [imageUrl])
 
   useEffect(() => {
     if (!host.current) return
