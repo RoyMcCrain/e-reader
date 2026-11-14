@@ -54,6 +54,22 @@ test('EPUB keeps publisher layout and illustration while blocking active content
     dialogs += 1
     void dialog.dismiss()
   })
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({
+        fontFamily: 'publisher',
+        fontSize: 18,
+        lineHeight: 1.8,
+        marginTop: 8,
+        marginRight: 8,
+        marginBottom: 8,
+        marginLeft: 8,
+        spread: 'single',
+        gutter: 16,
+      }),
+    )
+  })
   await page.goto('/')
   localOrigin = new URL(page.url()).origin
   await page.waitForLoadState('networkidle')
@@ -62,7 +78,8 @@ test('EPUB keeps publisher layout and illustration while blocking active content
     mimeType: 'application/epub+zip',
     buffer: Buffer.from(await makeEpub()),
   })
-  await expect(page.getByText('security.epub')).toBeVisible()
+  await expect(page.getByRole('region', { name: '読書画面' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '次へ' })).toBeEnabled()
   const foliate = page.locator('foliate-view')
   await expect(foliate).toHaveCount(1)
   await expect

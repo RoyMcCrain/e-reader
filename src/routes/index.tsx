@@ -1,12 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
-import { Reader } from '../reader/Reader'
+import { useReaderApp } from '../state/ReaderProvider'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
-  const [file, setFile] = useState<File | null>(null)
+  const { file, setFile } = useReaderApp()
+  const navigate = useNavigate()
   const [dragging, setDragging] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
@@ -19,7 +20,7 @@ function Home() {
     setMessage('')
     setFile(selected)
   }
-  if (file) return <Reader file={file} onClose={() => setFile(null)} />
+  if (file) return null
   return (
     <main className={styles.home}>
       <div className={styles.brand}>
@@ -74,11 +75,18 @@ function Home() {
           </div>
           <div>
             <b>画像ZIP</b>
-            <span>画像を自然な順序で一枚ずつ表示</span>
+            <span>画像を自然な順序で、画面幅に合わせて表示</span>
           </div>
         </div>
       </section>
       <footer className={styles.foot}>
+        <button
+          className={styles.settingsLink}
+          onClick={() => void navigate({ to: '/config' })}
+        >
+          設定
+        </button>
+        <br />
         ファイルは端末内で処理され、保存されません。
         <br />
         <span>

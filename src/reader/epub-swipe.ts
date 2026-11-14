@@ -4,69 +4,104 @@ type Direction = 'rtl' | 'ltr'
 type Turn = (next: boolean) => void | Promise<void>
 type Point = { x: number; y: number }
 type Renderer = HTMLElement & { atStart?: boolean; atEnd?: boolean }
+type Controller = ReturnType<typeof createSwipe>
 
 const reducedMotion = () =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-export const bindEpubSwipe = (
+const controllers = new WeakMap<
+  HTMLElement,
+  { controller: Controller; refs: number }
+>()
+
+const interactiveTarget = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false
+  return Boolean(
+    target.closest(
+      'a, button, input, select, textarea, [contenteditable]:not([contenteditable="false"])',
+    ),
+  )
+}
+
+const createSwipe = (
   view: FoliateViewElement,
   host: HTMLElement,
+  surface: HTMLElement,
   direction: Direction,
   turn: Turn,
 ) => {
   let start: Point | null = null
-  let renderer: HTMLElement | null = null
+  let startDocument: Document | null = null
   let animation: Animation | null = null
   let clickTimer = 0
   let suppressClick = false
   let gesture = 0
+
   const reset = () => {
     animation?.cancel()
     animation = null
-    if (renderer) {
-      renderer.style.transform = ''
-      renderer.style.transition = ''
-    }
-    renderer = null
+    surface.style.transform = ''
+    surface.style.transition = ''
   }
   const point = (touch: Touch): Point => ({
     x: touch.screenX,
     y: touch.screenY,
   })
+  const available = (next: boolean) => {
+    const boundary = next ? surface.dataset.atEnd : surface.dataset.atStart
+    if (boundary !== undefined) return boundary !== 'true'
+    const renderer = view.renderer as Renderer | null
+    return next ? !renderer?.atEnd : !renderer?.atStart
+  }
   const onStart = (event: TouchEvent) => {
     event.stopImmediatePropagation()
-    if (event.touches.length !== 1) {
+    const doc =
+      event.currentTarget instanceof Document
+        ? event.currentTarget
+        : host.ownerDocument
+    if (
+      event.touches.length !== 1 ||
+      interactiveTarget(event.target) ||
+      Boolean(doc.getSelection()?.toString())
+    ) {
       start = null
+      startDocument = null
       reset()
       return
     }
     reset()
     gesture += 1
     start = point(event.touches[0])
-    renderer = view as HTMLElement
+    startDocument =
+      event.currentTarget instanceof Document ? event.currentTarget : null
   }
   const onMove = (event: TouchEvent) => {
     event.stopImmediatePropagation()
     if (event.touches.length !== 1) {
       start = null
+      startDocument = null
       reset()
       return
     }
-    if (!start || !renderer) return
+    if (!start) return
     const current = point(event.touches[0])
     const dx = current.x - start.x
     const dy = current.y - start.y
     if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy) * 1.25) return
-    if (!reducedMotion()) renderer.style.transform = `translateX(${dx}px)`
+    if (!reducedMotion()) surface.style.transform = `translateX(${dx}px)`
     if (Math.abs(dx) >= 45) event.preventDefault()
   }
-  const settle = (element: Renderer, from: number) => {
+  const finishAnimation = (token: number) => {
+    if (gesture !== token) return
+    reset()
+  }
+  const settle = (from: number) => {
     const ownGesture = gesture
     if (reducedMotion()) {
-      element.style.transform = ''
+      reset()
       return
     }
-    animation = element.animate(
+    animation = surface.animate(
       [
         { transform: `translateX(${from}px)` },
         { transform: 'translateX(0px)' },
@@ -77,9 +112,7 @@ export const bindEpubSwipe = (
     void active.finished
       .then(() => {
         if (animation !== active || gesture !== ownGesture) return
-        element.style.transform = ''
-        animation = null
-        if (renderer === element) renderer = null
+        finishAnimation(ownGesture)
       })
       .catch(() => undefined)
   }
@@ -90,14 +123,11 @@ export const bindEpubSwipe = (
     const dx = end ? point(end).x - start.x : 0
     const dy = end ? point(end).y - start.y : 0
     start = null
-    if (!renderer) return
-    const element = renderer
+    startDocument = null
     const moved = Math.abs(dx) >= 45 && Math.abs(dx) > Math.abs(dy) * 1.25
     const next = direction === 'rtl' ? dx > 0 : dx < 0
-    const paginator = view.renderer as Renderer | null
-    const available = next ? !paginator?.atEnd : !paginator?.atStart
-    if (!moved || !available) {
-      settle(element, dx)
+    if (!moved || !available(next)) {
+      settle(dx)
       return
     }
     event.preventDefault()
@@ -106,30 +136,45 @@ export const bindEpubSwipe = (
     clickTimer = window.setTimeout(() => {
       suppressClick = false
     }, 500)
+    const ownGesture = gesture
     if (!reducedMotion()) {
       animation?.cancel()
-      element.style.transform = ''
-      animation = element.animate(
+      surface.style.transform = ''
+      animation = surface.animate(
         [
           { transform: `translateX(${dx}px)` },
-          { transform: `translateX(${Math.sign(dx) * view.clientWidth}px)` },
+          { transform: `translateX(${Math.sign(dx) * surface.clientWidth}px)` },
         ],
         { duration: 110, easing: 'ease-out' },
       )
-    } else element.style.transform = ''
-    void Promise.resolve(turn(next)).catch(() => undefined)
+      const active = animation
+      void active.finished
+        .then(() => {
+          if (animation !== active || gesture !== ownGesture) return
+          finishAnimation(ownGesture)
+        })
+        .catch(() => undefined)
+    } else reset()
+    void Promise.resolve(turn(next))
+      .catch(() => undefined)
+      .finally(() => {
+        if (gesture === ownGesture) finishAnimation(ownGesture)
+      })
   }
   const onCancel = (event: Event) => {
     event.stopImmediatePropagation()
     if (!start) return
-    const element = renderer
-    const from = element
-      ? new DOMMatrixReadOnly(getComputedStyle(element).transform).m41
-      : 0
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(surface).transform)
     start = null
-    if (element) settle(element, from)
+    startDocument = null
+    settle(matrix.m41)
   }
-  const onRelocate = () => reset()
+  const onRelocate = () => {
+    gesture += 1
+    start = null
+    startDocument = null
+    reset()
+  }
   const onClick = (event: MouseEvent) => {
     if (!suppressClick) return
     suppressClick = false
@@ -152,34 +197,71 @@ export const bindEpubSwipe = (
       doc.removeEventListener('touchmove', onMove, true)
       doc.removeEventListener('touchend', onEnd, true)
       doc.removeEventListener('touchcancel', onCancel, true)
-      start = null
-      reset()
+      if (startDocument === doc) {
+        start = null
+        startDocument = null
+        reset()
+      }
     }
   }
-  const onHostStart = (event: TouchEvent) => {
-    if (event.target !== host && event.target !== view) return
-    onStart(event)
+  const hostTouch = (event: TouchEvent) => {
+    if (!host.contains(event.target as Node) || interactiveTarget(event.target))
+      return
+    if (event.type === 'touchstart') onStart(event)
+    else if (event.type === 'touchmove') onMove(event)
+    else if (event.type === 'touchend') onEnd(event)
+    else onCancel(event)
   }
-  const onHostMove = (event: TouchEvent) => {
-    if (event.target === host || event.target === view) onMove(event)
-  }
-  const onHostEnd = (event: TouchEvent) => {
-    if (event.target === host || event.target === view) onEnd(event)
-  }
-  host.addEventListener('touchstart', onHostStart, { passive: true })
-  host.addEventListener('touchmove', onHostMove, { passive: false })
-  host.addEventListener('touchend', onHostEnd, { passive: false })
+  host.addEventListener('click', onClick, true)
+  host.addEventListener('touchstart', hostTouch, { passive: true })
+  host.addEventListener('touchmove', hostTouch, { passive: false })
+  host.addEventListener('touchend', hostTouch, { passive: false })
+  host.addEventListener('touchcancel', hostTouch)
   view.addEventListener('relocate', onRelocate)
   return {
     attach,
     close: () => {
       gesture += 1
+      start = null
+      startDocument = null
       reset()
       window.clearTimeout(clickTimer)
-      host.removeEventListener('touchstart', onHostStart)
-      host.removeEventListener('touchmove', onHostMove)
-      host.removeEventListener('touchend', onHostEnd)
+      host.removeEventListener('click', onClick, true)
+      host.removeEventListener('touchstart', hostTouch)
+      host.removeEventListener('touchmove', hostTouch)
+      host.removeEventListener('touchend', hostTouch)
+      host.removeEventListener('touchcancel', hostTouch)
       view.removeEventListener('relocate', onRelocate)
+    },
+  }
+}
+
+export const bindEpubSwipe = (
+  view: FoliateViewElement,
+  host: HTMLElement,
+  direction: Direction,
+  turn: Turn,
+) => {
+  const surface =
+    (host.querySelector('[data-reader-spread]') as HTMLElement | null) ?? host
+  let shared = controllers.get(surface)
+  if (!shared) {
+    shared = {
+      controller: createSwipe(view, host, surface, direction, turn),
+      refs: 0,
+    }
+    controllers.set(surface, shared)
+  }
+  shared.refs += 1
+  const controller = shared.controller
+  return {
+    attach: controller.attach,
+    close: () => {
+      shared!.refs -= 1
+      if (!shared!.refs) {
+        controller.close()
+        controllers.delete(surface)
+      }
     },
   }
 }

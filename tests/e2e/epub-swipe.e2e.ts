@@ -33,10 +33,11 @@ const epubState = (page: Page) =>
       lastLocation?: { cfi?: string }
     }
     const renderer = view.renderer
-    const computed = getComputedStyle(view)
     return {
       cfi: view.lastLocation?.cfi,
-      transform: computed.transform,
+      transform: getComputedStyle(
+        element.closest('[data-reader-spread]') as Element,
+      ).transform,
       x: view.getBoundingClientRect().x,
       width: view.getBoundingClientRect().width,
       animations: view.getAnimations().length,
@@ -69,6 +70,12 @@ for (const direction of ['ltr', 'rtl'] as const) {
   test(`EPUB ${direction} swipe follows the page and settles cleanly`, async ({
     page,
   }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        'shiori.reader.settings.v1',
+        JSON.stringify({ spread: 'single' }),
+      )
+    })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await page.locator('input[type=file]').setInputFiles({

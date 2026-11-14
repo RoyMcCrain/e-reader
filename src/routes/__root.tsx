@@ -3,8 +3,43 @@ import {
   HeadContent,
   Outlet,
   Scripts,
+  useLocation,
+  useNavigate,
 } from '@tanstack/react-router'
+import { Reader } from '../reader/Reader'
+import { ReaderProvider, useReaderApp } from '../state/ReaderProvider'
+import shellStyles from '../state/ReaderShell.module.css'
 import './styles.css'
+
+const AppShell = () => {
+  const { file, setFile, settings } = useReaderApp()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const active = location.pathname !== '/config'
+  return (
+    <>
+      {file && (
+        <div
+          className={shellStyles.readerShell}
+          inert={!active}
+          aria-hidden={!active}
+        >
+          <Reader
+            file={file}
+            settings={settings}
+            active={active}
+            onClose={() => {
+              setFile(undefined)
+              if (location.pathname !== '/') void navigate({ to: '/' })
+            }}
+            onSettings={() => void navigate({ to: '/config' })}
+          />
+        </div>
+      )}
+      <Outlet />
+    </>
+  )
+}
 
 export const Route = createRootRoute({
   head: () => ({
@@ -23,7 +58,9 @@ export const Route = createRootRoute({
         <HeadContent />
       </head>
       <body>
-        <Outlet />
+        <ReaderProvider>
+          <AppShell />
+        </ReaderProvider>
         <Scripts />
       </body>
     </html>

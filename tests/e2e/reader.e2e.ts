@@ -1,9 +1,29 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
+const forceSingleSpread = async (page: import('@playwright/test').Page) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({
+        fontFamily: 'publisher',
+        fontSize: 18,
+        lineHeight: 1.8,
+        marginTop: 8,
+        marginRight: 8,
+        marginBottom: 8,
+        marginLeft: 8,
+        spread: 'single',
+        gutter: 16,
+      }),
+    )
+  })
+}
+
 test('a ZIP swipe animates the incoming page in its travel direction', async ({
   page,
 }) => {
+  await forceSingleSpread(page)
   const pixel = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZt8AAAAASUVORK5CYII=',
     'base64',
@@ -36,8 +56,8 @@ test('a ZIP swipe animates the incoming page in its travel direction', async ({
   await expect(page.getByRole('img', { name: '画像 2 / 2' })).toBeVisible()
   await expect
     .poll(() =>
-      page.locator('img').evaluate((image) =>
-        image.getAnimations().some((animation) => {
+      page.locator('[class*="imagePair"]').evaluate((pair) =>
+        pair.getAnimations().some((animation) => {
           const frames = (
             animation.effect as KeyframeEffect | null
           )?.getKeyframes()
@@ -66,6 +86,7 @@ test('landing is usable on desktop and mobile', async ({ page }) => {
 test('ZIP images turn rapidly in natural order and remain within bounds', async ({
   page,
 }) => {
+  await forceSingleSpread(page)
   const pixel = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZt8AAAAASUVORK5CYII=',
     'base64',

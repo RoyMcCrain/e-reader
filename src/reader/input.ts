@@ -204,10 +204,22 @@ export const bindEpubInput = (
       removeSwipe()
     })
   }
+  const refresh = (loaded?: Document) => {
+    const contents = view.renderer?.getContents() ?? []
+    if (loaded) bind(loaded)
+    contents.forEach(({ doc }) => bind(doc))
+    const current = new Set(contents.map(({ doc }) => doc))
+    if (loaded) current.add(loaded)
+    docs.forEach((unbind, doc) => {
+      if (current.has(doc)) return
+      unbind()
+      docs.delete(doc)
+    })
+  }
   const load = (event: Event) =>
-    bind((event as CustomEvent<{ doc: Document }>).detail.doc)
+    refresh((event as CustomEvent<{ doc: Document }>).detail.doc)
   view.addEventListener('load', load)
-  view.renderer?.getContents().forEach(({ doc }) => bind(doc))
+  refresh()
   return () => {
     view.removeEventListener('load', load)
     docs.forEach((unbind) => unbind())

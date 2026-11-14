@@ -8,62 +8,79 @@
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-.toolbar,
-.footer {
-  height: 58px;
+.toolbar {
+  height: 40px;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
-  gap: 14px;
+  padding: 0 8px;
+  gap: 6px;
   border-bottom: 1px solid #e2dfd5;
 }
-.footer {
-  height: 64px;
-  border-bottom: 0;
-  border-top: 1px solid #e2dfd5;
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-.toolbar button,
-.footer button,
-.toc button {
-  border: 1px solid #d8d9ce;
-  border-radius: 9px;
-  background: #fbfaf6;
+.toolbar button {
+  width: 40px;
+  height: 38px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: #3b4b39;
-  padding: 9px 13px;
   cursor: pointer;
-  font: inherit;
-  font-size: 13px;
 }
-.bookTitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
+.toolbar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.toolbar button:focus-visible,
+.toc button:focus-visible {
+  outline: 2px solid #52694e;
+  outline-offset: 2px;
+}
+.progressLabel {
+  min-width: 42px;
+  text-align: center;
+  font-size: 12px;
+  color: #687363;
 }
 .pages {
   position: relative;
   flex: 1;
   min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   touch-action: pinch-zoom;
-}
-.pages foliate-view {
-  height: 100%;
-  width: 100%;
-  display: block;
 }
 .pages :global(foliate-view) {
   height: 100%;
   width: 100%;
+  display: block;
+}
+.imagePair {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .pageImage {
-  max-width: 100%;
-  max-height: 100%;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  flex: 1 1 0;
   object-fit: contain;
   user-select: none;
 }
@@ -78,33 +95,13 @@
 }
 .error {
   color: #a6372c;
-}
-.progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: #687363;
-  flex: 1;
-  max-width: 520px;
-}
-.progress > div {
-  height: 3px;
-  background: #dedfd5;
-  flex: 1;
-  border-radius: 5px;
-}
-.progress i {
-  height: 100%;
-  display: block;
-  background: #71846d;
-  border-radius: 5px;
+  z-index: 2;
 }
 .toc {
   position: absolute;
   z-index: 5;
   right: 10px;
-  top: 62px;
+  top: 46px;
   max-height: 60dvh;
   overflow: auto;
   display: flex;
@@ -116,40 +113,33 @@
   border-radius: 12px;
 }
 .toc button {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   text-align: left;
+  padding: 8px;
+  cursor: pointer;
+  font: inherit;
 }
 .subToc {
   padding-left: 12px;
 }
-.hint {
-  margin: 0;
-  padding: 4px 12px;
-  text-align: center;
-  font-size: 11px;
-  color: #687363;
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .pages :global(iframe) {
   border: 0;
 }
-@media (max-width: 500px) {
-  .toolbar {
-    height: 52px;
-    padding: 0 9px;
-    gap: 7px;
-  }
-  .toolbar button,
-  .footer button {
-    padding: 8px 9px;
-    font-size: 12px;
-  }
-  .footer {
-    height: 57px;
-    padding: 0 12px;
-  }
-  .bookTitle {
-    font-size: 10px;
-  }
-  .hint {
-    font-size: 10px;
+@media (prefers-reduced-motion: reduce) {
+  .imagePair {
+    animation: none !important;
   }
 }

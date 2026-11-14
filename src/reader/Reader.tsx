@@ -1,197 +1,43 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  BlobReader,
-  BlobWriter,
-  TextWriter,
-  ZipReader,
-  type FileEntry,
-} from '@zip.js/zip.js'
-import type {
-  EPUB as EpubConstructor,
-  EpubBook,
-  TocItem,
-} from 'foliate-js/epub.js'
-import type { FoliateViewElement } from 'foliate-js/view.js'
-import { bindEpubInput, bindHostInput } from './input'
-import styles from './Reader.module.css'
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from 'react'
+import type { TocItem } from 'foliate-js/epub.js'
+import { openEpub } from './epub'
+import type { EpubSession } from './epub-types'
+import type { ReaderSettings } from './preferences'
+import { bindHostInput } from './input'
 import { openImageArchive } from './archive'
-import { secureDocument } from './security'
 import { animatePage, type SwipeDirection } from './motion'
+import { columnsForWidth, nextLead, visibleIndices } from './layout'
+import { Icon } from './Icon'
+import styles from './Reader.module.css'
 
-interface ReaderProps {
-  file: File
-  onClose: () => void
-}
 type Archive = Awaited<ReturnType<typeof openImageArchive>>
 type Session =
-  | {
-      kind: 'epub'
-      book: InstanceType<typeof EpubConstructor>
-      view: FoliateViewElement
-      reader: ZipReader<BlobReader>
-      removeInput: () => void
-    }
-  | { kind: 'zip'; archive: Archive }
-
-const checkCancelled = (isCancelled: () => boolean) => {
-  if (isCancelled()) throw new Error('読み込みがキャンセルされました。')
+  { kind: 'zip'; archive: Archive } | { kind: 'epub'; epub: EpubSession }
+interface ReaderProps {
+  file: File
+  settings: ReaderSettings
+  active: boolean
+  onClose: () => void
+  onSettings: () => void
 }
 
-const installContentHooks = (book: EpubBook) => {
-  book.transformTarget.addEventListener('data', (event: Event) => {
-    const detail = (
-      event as CustomEvent<{
-        data: Blob | string | Promise<Blob | string>
-        type: string
-      }>
-    ).detail
-    if (
-      !['application/xhtml+xml', 'text/html', 'image/svg+xml'].includes(
-        detail.type,
-      )
-    )
-      return
-    detail.data = Promise.resolve(detail.data)
-      .then(async (data) =>
-        secureDocument(
-          typeof data === 'string' ? data : await data.text(),
-          detail.type,
-        ),
-      )
-      .then((text) => new Blob([text], { type: detail.type }))
-  })
-  book.transformTarget.addEventListener('load', (event: Event) => {
-    const detail = (
-      event as CustomEvent<{ isScript?: boolean; allow?: boolean }>
-    ).detail
-    if (detail.isScript) detail.allow = false
-  })
-}
+const messageFor = (cause: unknown) =>
+  cause instanceof Error ? cause.message : 'ファイルを開けませんでした。'
 
-const configureEpubView = (
-  host: HTMLElement,
-  progress: (value: number) => void,
-) => {
-  const view = document.createElement('foliate-view') as FoliateViewElement
-  host.append(view)
-  view.addEventListener('relocate', (event) => {
-    const detail = (event as CustomEvent<{ fraction?: number }>).detail
-    progress(Math.round((detail.fraction ?? 0) * 100))
-  })
-  view.addEventListener('external-link', (event) => event.preventDefault())
-  return view
-}
-
-const initializeEpub = async (
-  book: InstanceType<typeof EpubConstructor>,
-  reader: ZipReader<BlobReader>,
-  host: HTMLElement,
-  progress: (value: number) => void,
-  isCancelled: () => boolean,
-  turn: (next: boolean, swipeDirection?: SwipeDirection) => void,
-): Promise<Session> => {
-  let view: FoliateViewElement | null = null
-  let removeInput: (() => void) | undefined
-  try {
-    await book.init()
-    installContentHooks(book)
-    checkCancelled(isCancelled)
-    view = configureEpubView(host, progress)
-    await view.open(book)
-    const renderer = view.renderer!
-    renderer.setAttribute('max-column-count', '1')
-    renderer.setAttribute('flow', 'paginated')
-    renderer.setAttribute('gap', '5%')
-    removeInput = bindEpubInput(
-      view,
-      host,
-      book.dir === 'rtl' ? 'rtl' : 'ltr',
-      turn,
-    )
-    await view.init({ showTextStart: false })
-    return { kind: 'epub', book, view, reader, removeInput }
-  } catch (cause) {
-    removeInput?.()
-    view?.close()
-    view?.remove()
-    try {
-      book.destroy()
-    } catch {
-      // Initialization may fail before the book is destroyable.
-    }
-    try {
-      await reader.close()
-    } catch {
-      // Preserve the initialization error.
-    }
-    throw cause
-  }
-}
-
-const loadEpub = async (
-  file: File,
-  host: HTMLElement,
-  progress: (value: number) => void,
-  isCancelled: () => boolean,
-  turn: (next: boolean, swipeDirection?: SwipeDirection) => void,
-): Promise<Session> => {
-  const [module] = await Promise.all([
-    import('foliate-js/epub.js'),
-    import('foliate-js/view.js').then(() => undefined),
-  ])
-  checkCancelled(isCancelled)
-  const reader = new ZipReader(new BlobReader(file))
-  let entries: Awaited<ReturnType<typeof reader.getEntries>>
-  try {
-    entries = await reader.getEntries()
-  } catch (cause) {
-    try {
-      await reader.close()
-    } catch {
-      // Preserve the entry-loading error.
-    }
-    throw cause
-  }
-  if (isCancelled()) {
-    await reader.close()
-    checkCancelled(() => true)
-  }
-  if (
-    entries.length > 5000 ||
-    entries.reduce((sum, entry) => sum + entry.uncompressedSize, 0) >
-      1_000_000_000
-  ) {
-    await reader.close()
-    throw new Error('EPUBの展開サイズが上限を超えています。')
-  }
-  const map = new Map(entries.map((entry) => [entry.filename, entry]))
-  const getText = async (path: string) => {
-    const entry = map.get(path)
-    return entry && !entry.directory
-      ? (entry as FileEntry).getData(new TextWriter())
-      : null
-  }
-  const getBlob = async (path: string) => {
-    const entry = map.get(path)
-    return entry && !entry.directory
-      ? (entry as FileEntry).getData(new BlobWriter())
-      : null
-  }
-  const book = new module.EPUB({
-    loadText: getText,
-    loadBlob: getBlob,
-    getSize: (path) => map.get(path)?.uncompressedSize ?? 0,
-  })
-  return initializeEpub(book, reader, host, progress, isCancelled, turn)
-}
-
-const Toc = ({
-  items,
-  goTo,
-}: {
+interface TocProps {
   items: TocItem[]
   goTo: (href: string) => void
-}) => (
+}
+
+const Toc = ({ items, goTo }: TocProps) => (
   <>
     {items.map((item, index) => (
       <div key={`${item.href}-${index}`}>
@@ -206,263 +52,152 @@ const Toc = ({
   </>
 )
 
-export const Reader = ({ file, onClose }: ReaderProps) => {
-  const host = useRef<HTMLDivElement>(null)
-  const session = useRef<Session | null>(null)
-  const queue = useRef<Promise<void>>(Promise.resolve())
-  const pageRef = useRef(0)
-  const imageRequest = useRef(0)
-  const generation = useRef(0)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [progress, setProgress] = useState(0)
-  const [direction, setDirection] = useState<'rtl' | 'ltr'>('ltr')
-  const [archive, setArchive] = useState<Archive | null>(null)
-  const [page, setPage] = useState(0)
-  const [imageUrl, setImageUrl] = useState('')
-  const animation = useRef<Animation | null>(null)
-  const pendingSwipe = useRef<SwipeDirection | null>(null)
-  const [toc, setToc] = useState<TocItem[]>([])
-  const [showToc, setShowToc] = useState(false)
-  const enqueue = (action: () => Promise<void>) => {
-    const currentGeneration = generation.current
-    queue.current = queue.current
-      .then(() =>
-        currentGeneration === generation.current ? action() : undefined,
-      )
-      .catch((cause) => {
-        if (currentGeneration === generation.current)
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : 'ページを表示できませんでした。',
-          )
-      })
-    return queue.current
-  }
-  const turn = (next: boolean, swipeDirection?: SwipeDirection) =>
-    enqueue(async () => {
-      animation.current?.cancel()
-      animation.current = null
-      pendingSwipe.current = null
-      const current = session.current
+interface ZipRefs {
+  generation: MutableRefObject<number>
+  session: MutableRefObject<Session | null>
+  queue: MutableRefObject<Promise<void>>
+  lead: MutableRefObject<number>
+  columns: MutableRefObject<1 | 2>
+  animation: MutableRefObject<Animation | null>
+  swipe: MutableRefObject<SwipeDirection | null>
+  imageRequest: MutableRefObject<number>
+  active: MutableRefObject<boolean>
+}
+interface ZipSetters {
+  setIndices: Dispatch<SetStateAction<number[]>>
+  setUrls: Dispatch<SetStateAction<string[]>>
+  setProgress: Dispatch<SetStateAction<number>>
+  setAtStart: Dispatch<SetStateAction<boolean>>
+  setAtEnd: Dispatch<SetStateAction<boolean>>
+  setError: Dispatch<SetStateAction<string>>
+}
+const updateZip = async (
+  archive: Archive,
+  lead: number,
+  id: number,
+  refs: ZipRefs,
+  setters: ZipSetters,
+  swipeDirection?: SwipeDirection,
+) => {
+  const request = ++refs.imageRequest.current
+  const indices = visibleIndices(
+    lead,
+    archive.names.length,
+    refs.columns.current,
+  )
+  const urls = await Promise.all(indices.map((index) => archive.getUrl(index)))
+  if (
+    refs.generation.current !== id ||
+    refs.imageRequest.current !== request ||
+    refs.session.current?.kind !== 'zip'
+  )
+    return
+  refs.lead.current = lead
+  refs.swipe.current = swipeDirection ?? null
+  setters.setIndices(indices)
+  setters.setUrls(urls)
+  setters.setProgress(
+    Math.round(((lead + indices.length) / archive.names.length) * 100),
+  )
+  setters.setAtStart(lead === 0)
+  setters.setAtEnd(lead + indices.length >= archive.names.length)
+}
+const scheduleZipUpdate = (refs: ZipRefs, setters: ZipSetters) => {
+  const id = refs.generation.current
+  refs.queue.current = refs.queue.current
+    .then(async () => {
+      if (!refs.active.current || refs.generation.current !== id) return
+      const current = refs.session.current
+      if (current?.kind !== 'zip') return
+      await updateZip(current.archive, refs.lead.current, id, refs, setters)
+    })
+    .catch((cause) => {
+      if (refs.generation.current === id) setters.setError(messageFor(cause))
+    })
+}
+
+const scheduleTurn = (
+  next: boolean,
+  swipeDirection: SwipeDirection | undefined,
+  refs: ZipRefs,
+  setters: ZipSetters,
+) => {
+  const id = refs.generation.current
+  refs.queue.current = refs.queue.current
+    .then(async () => {
+      if (!refs.active.current || refs.generation.current !== id) return
+      const current = refs.session.current
       if (!current) return
       if (current.kind === 'epub') {
-        await (next ? current.view.next() : current.view.prev())
-      } else {
-        const destination = Math.max(
-          0,
-          Math.min(
-            current.archive.names.length - 1,
-            pageRef.current + (next ? 1 : -1),
-          ),
-        )
-        if (destination === pageRef.current) return
-        pageRef.current = destination
-        setPage(destination)
-        const request = ++imageRequest.current
-        const url = await current.archive.getUrl(destination)
-        if (request === imageRequest.current && current === session.current) {
-          pendingSwipe.current = swipeDirection ?? null
-          setImageUrl(url)
-        }
-        setProgress(
-          Math.round(((destination + 1) / current.archive.names.length) * 100),
-        )
-      }
-    })
-
-  useEffect(() => {
-    setError('')
-    setLoading(true)
-    setProgress(0)
-    setDirection('ltr')
-    setArchive(null)
-    pageRef.current = 0
-    setPage(0)
-    setImageUrl('')
-    setToc([])
-    setShowToc(false)
-    imageRequest.current += 1
-    const currentGeneration = ++generation.current
-    let cancelled = false
-    let opened: Session | null = null
-    const open = async () => {
-      const result = file.name.toLowerCase().endsWith('.zip')
-        ? { kind: 'zip' as const, archive: await openImageArchive(file) }
-        : file.name.toLowerCase().endsWith('.epub')
-          ? await loadEpub(
-              file,
-              host.current!,
-              setProgress,
-              () => cancelled,
-              turn,
-            )
-          : (() => {
-              throw new Error('EPUBまたは画像ZIPを選んでください。')
-            })()
-      opened = result
-      if (cancelled) {
-        await dispose(result)
+        await (next ? current.epub.next() : current.epub.prev())
         return
       }
-      session.current = result
-      if (result.kind === 'zip') {
-        setArchive(result.archive)
-        const url = await result.archive.getUrl(0)
-        if (!cancelled) setImageUrl(url)
-      } else {
-        setDirection(result.book.dir === 'rtl' ? 'rtl' : 'ltr')
-        setToc(result.book.toc ?? [])
-      }
-      if (!cancelled) setLoading(false)
-    }
-    void open().catch(async (cause) => {
-      if (opened) {
-        if (session.current === opened) session.current = null
-        await dispose(opened)
-        opened = null
-      }
-      if (!cancelled) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : 'ファイルを開けませんでした。',
-        )
-        setLoading(false)
-      }
+      const lead = next
+        ? nextLead(
+            refs.lead.current,
+            current.archive.names.length,
+            refs.columns.current,
+          )
+        : Math.max(0, refs.lead.current - refs.columns.current)
+      if (lead === refs.lead.current) return
+      refs.animation.current?.cancel()
+      refs.animation.current = null
+      await updateZip(current.archive, lead, id, refs, setters, swipeDirection)
     })
-    return () => {
-      cancelled = true
-      animation.current?.cancel()
-      animation.current = null
-      pendingSwipe.current = null
-      if (generation.current === currentGeneration) generation.current += 1
-      session.current = null
-      if (opened) void dispose(opened)
-    }
-  }, [file])
-
-  useLayoutEffect(() => {
-    const swipeDirection = pendingSwipe.current
-    pendingSwipe.current = null
-    if (swipeDirection)
-      animatePage(
-        host.current?.querySelector('img') ?? null,
-        swipeDirection,
-        animation,
-      )
-  }, [imageUrl])
-
-  useEffect(() => {
-    if (!host.current) return
-    const removeHostInput = bindHostInput(host.current, direction, turn)
-    return () => removeHostInput()
-  }, [loading, direction])
-
-  const goTo = (href: string) => {
-    setShowToc(false)
-    enqueue(async () => {
-      if (session.current?.kind === 'epub')
-        await session.current.view.goTo(href)
+    .catch((cause) => {
+      if (refs.generation.current === id) setters.setError(messageFor(cause))
     })
-  }
-  return (
-    <ReaderLayout
-      file={file}
-      onClose={onClose}
-      direction={direction}
-      toc={toc}
-      showToc={showToc}
-      toggleToc={() => setShowToc(!showToc)}
-      goTo={goTo}
-      host={host}
-      archive={archive}
-      imageUrl={imageUrl}
-      page={page}
-      loading={loading}
-      error={error}
-      setError={setError}
-      progress={progress}
-      turn={turn}
-    />
-  )
 }
 
-interface ToolbarProps {
-  file: File
-  onClose: () => void
-  direction: 'rtl' | 'ltr'
-  toc: TocItem[]
-  showToc: boolean
-  toggleToc: () => void
-  goTo: (href: string) => void
-}
-const ReaderToolbar = ({
-  file,
-  onClose,
-  direction,
-  toc,
-  showToc,
-  toggleToc,
-  goTo,
-}: ToolbarProps) => (
-  <>
-    <header className={styles.toolbar}>
-      <button onClick={onClose} aria-label="本を閉じる">
-        ← 閉じる
-      </button>
-      <span className={styles.bookTitle}>
-        {file.name} ·{' '}
-        {file.name.toLowerCase().endsWith('.zip')
-          ? '画像ZIP'
-          : `EPUB・${direction === 'rtl' ? '右から左' : '左から右'}`}
-      </span>
-      {toc.length > 0 && (
-        <button onClick={toggleToc} aria-expanded={showToc}>
-          目次
-        </button>
-      )}
-    </header>
-    {showToc && (
-      <nav
-        className={styles.toc}
-        aria-label="目次"
-        onKeyDown={(event) => event.stopPropagation()}
-      >
-        <Toc items={toc} goTo={goTo} />
-      </nav>
-    )}
-  </>
-)
-interface PageProps {
-  host: React.RefObject<HTMLDivElement | null>
+interface ReaderStageProps {
   archive: Archive | null
-  imageUrl: string
-  page: number
+  indices: number[]
+  urls: string[]
+  host: React.RefObject<HTMLDivElement | null>
+  padding: string
+  gutter: number
+  count: number
   loading: boolean
   error: string
-  setError: (value: string) => void
+  setError: Dispatch<SetStateAction<string>>
 }
-const ReaderPage = ({
-  host,
+
+const ReaderStage = ({
   archive,
-  imageUrl,
-  page,
+  indices,
+  urls,
+  host,
+  padding,
+  gutter,
+  count,
   loading,
   error,
   setError,
-}: PageProps) => (
-  <main className={styles.pages} aria-label="読書ページ" ref={host}>
-    {archive && imageUrl && (
-      <img
-        className={styles.pageImage}
-        src={imageUrl}
-        alt={`画像 ${page + 1} / ${archive.names.length}`}
-        onError={() => setError('画像を読み込めませんでした。')}
-      />
+}: ReaderStageProps) => (
+  <main
+    className={styles.pages}
+    aria-label="読書ページ"
+    ref={host}
+    style={{ padding }}
+  >
+    {archive && (
+      <div className={styles.imagePair} style={{ gap: gutter }}>
+        {urls.map((url, index) => (
+          <img
+            key={indices[index]}
+            className={styles.pageImage}
+            src={url}
+            alt={`画像 ${indices[index] + 1} / ${count}`}
+            onError={() => setError('画像を読み込めませんでした。')}
+          />
+        ))}
+      </div>
     )}
-    {loading && <p className={styles.message}>本を開いています…</p>}
+    {loading && (
+      <p className={`${styles.message} ${styles.srOnly}`} role="status">
+        本を開いています…
+      </p>
+    )}
     {error && (
       <p className={styles.error} role="alert">
         {error}
@@ -471,89 +206,409 @@ const ReaderPage = ({
   </main>
 )
 
-interface LayoutProps {
+const openReaderFile = async ({
+  file,
+  id,
+  active,
+  settings,
+  host,
+  signal,
+  refs,
+  setters,
+  setArchive,
+  setToc,
+  setDirection,
+}: {
   file: File
+  id: number
+  active: boolean
+  settings: ReaderSettings
+  host: HTMLElement
+  signal: AbortSignal
+  refs: ZipRefs
+  setters: ZipSetters
+  setArchive: Dispatch<SetStateAction<Archive | null>>
+  setToc: Dispatch<SetStateAction<TocItem[]>>
+  setDirection: Dispatch<SetStateAction<'ltr' | 'rtl'>>
+}) => {
+  if (file.name.toLowerCase().endsWith('.zip')) {
+    const archive = await openImageArchive(file)
+    if (signal.aborted) {
+      await archive.close()
+      return
+    }
+    refs.session.current = { kind: 'zip', archive }
+    setArchive(archive)
+    await updateZip(archive, 0, id, refs, setters)
+  } else if (file.name.toLowerCase().endsWith('.epub')) {
+    const epub = await openEpub({
+      file,
+      host,
+      settings,
+      columns: refs.columns.current,
+      active,
+      signal,
+      onLocation: (location) => {
+        if (signal.aborted || refs.generation.current !== id) return
+        setters.setProgress(Math.round(location.progress))
+        setters.setAtStart(location.atStart)
+        setters.setAtEnd(location.atEnd)
+      },
+      onError: (cause) => {
+        if (!signal.aborted && refs.generation.current === id)
+          setters.setError(cause.message)
+      },
+    })
+    if (signal.aborted) {
+      await epub.close()
+      return
+    }
+    refs.session.current = { kind: 'epub', epub }
+    setDirection(epub.dir)
+    setToc(epub.toc)
+  } else throw new Error('EPUBまたは画像ZIPを選んでください。')
+}
+
+const useResizeColumns = (
+  host: React.RefObject<HTMLDivElement | null>,
+  settings: ReaderSettings,
+  columnsRef: MutableRefObject<1 | 2>,
+  setColumns: Dispatch<SetStateAction<1 | 2>>,
+) => {
+  useEffect(() => {
+    const node = host.current
+    if (!node) return
+    const observe = (width: number) => {
+      const count = columnsForWidth(settings.spread, width)
+      columnsRef.current = count
+      setColumns(count)
+    }
+    const observer = new ResizeObserver(([entry]) =>
+      observe(entry.contentRect.width),
+    )
+    observer.observe(node)
+    const computed = getComputedStyle(node)
+    observe(
+      node.clientWidth -
+        Number.parseFloat(computed.paddingLeft) -
+        Number.parseFloat(computed.paddingRight),
+    )
+    return () => observer.disconnect()
+  }, [settings.spread, settings.marginLeft, settings.marginRight])
+}
+const useOpenFile = ({
+  file,
+  active,
+  settings,
+  host,
+  refs,
+  setters,
+  setArchive,
+  setToc,
+  setUrls,
+  setShowToc,
+  setLoading,
+  setDirection,
+}: {
+  file: File
+  active: boolean
+  settings: ReaderSettings
+  host: React.RefObject<HTMLDivElement | null>
+  refs: ZipRefs
+  setters: ZipSetters
+  setArchive: Dispatch<SetStateAction<Archive | null>>
+  setToc: Dispatch<SetStateAction<TocItem[]>>
+  setUrls: Dispatch<SetStateAction<string[]>>
+  setShowToc: Dispatch<SetStateAction<boolean>>
+  setLoading: Dispatch<SetStateAction<boolean>>
+  setDirection: Dispatch<SetStateAction<'ltr' | 'rtl'>>
+}) => {
+  useEffect(() => {
+    const controller = new AbortController()
+    const id = ++refs.generation.current
+    setLoading(true)
+    setters.setError('')
+    setters.setProgress(0)
+    setArchive(null)
+    setUrls([])
+    setters.setIndices([])
+    setToc([])
+    setDirection('ltr')
+    setShowToc(false)
+    refs.lead.current = 0
+    void openReaderFile({
+      file,
+      id,
+      active,
+      settings,
+      host: host.current!,
+      signal: controller.signal,
+      refs,
+      setters,
+      setArchive,
+      setToc,
+      setDirection,
+    })
+      .then(() => {
+        if (!controller.signal.aborted && refs.generation.current === id)
+          setLoading(false)
+      })
+      .catch((cause) => {
+        if (refs.generation.current !== id || controller.signal.aborted) return
+        setters.setError(messageFor(cause))
+        setLoading(false)
+      })
+    return () => {
+      controller.abort()
+      refs.generation.current++
+      refs.animation.current?.cancel()
+      refs.animation.current = null
+      refs.swipe.current = null
+      const previous = refs.session.current
+      refs.session.current = null
+      if (previous?.kind === 'zip') void previous.archive.close()
+      if (previous?.kind === 'epub') void previous.epub.close()
+    }
+  }, [file])
+}
+
+const progressText = (
+  count: number,
+  currentIndex: number,
+  indices: number[],
+  progress: number,
+) => {
+  if (!count) return `${progress}%`
+  const last = indices.at(-1)
+  const range = last !== undefined && indices.length > 1 ? `–${last + 1}` : ''
+  return `${currentIndex + 1}${range}/${count}`
+}
+
+interface ReaderControlsProps {
   onClose: () => void
-  direction: 'rtl' | 'ltr'
+  onSettings: () => void
   toc: TocItem[]
   showToc: boolean
   toggleToc: () => void
   goTo: (href: string) => void
-  host: React.RefObject<HTMLDivElement | null>
-  archive: Archive | null
-  imageUrl: string
-  page: number
   loading: boolean
+  atStart: boolean
+  atEnd: boolean
   error: string
-  setError: (value: string) => void
-  progress: number
   turn: (next: boolean) => void
+  count: number
+  currentIndex: number
+  indices: number[]
+  progress: number
+  direction: 'ltr' | 'rtl'
 }
-const ReaderLayout = ({
-  file,
+
+const ReaderControls = ({
   onClose,
-  direction,
+  onSettings,
   toc,
   showToc,
   toggleToc,
   goTo,
-  host,
-  archive,
-  imageUrl,
-  page,
   loading,
+  atStart,
+  atEnd,
   error,
-  setError,
-  progress,
   turn,
-}: LayoutProps) => (
-  <section className={styles.reader} aria-label="読書画面">
-    <ReaderToolbar
-      file={file}
-      onClose={onClose}
-      direction={direction}
-      toc={toc}
-      showToc={showToc}
-      toggleToc={toggleToc}
-      goTo={goTo}
-    />
-    <ReaderPage
-      host={host}
-      archive={archive}
-      imageUrl={imageUrl}
-      page={page}
-      loading={loading}
-      error={error}
-      setError={setError}
-    />
-    <p className={styles.hint}>
-      端をタップ／スワイプ、または矢印キーでページ移動
-      {archive ? ` · ${page + 1} / ${archive.names.length}` : ''}
-    </p>
-    <footer className={styles.footer} dir={direction}>
-      <button disabled={loading || Boolean(error)} onClick={() => turn(false)}>
-        前へ
+  count,
+  currentIndex,
+  indices,
+  progress,
+  direction,
+}: ReaderControlsProps) => (
+  <>
+    <header className={styles.toolbar}>
+      <button aria-label="本を閉じる" title="本を閉じる" onClick={onClose}>
+        <Icon name="close" />
       </button>
-      <div className={styles.progress}>
-        <span>{progress}%</span>
-        <div>
-          <i style={{ width: `${progress}%` }} />
-        </div>
+      <div className={styles.toolbarActions} dir={direction}>
+        <button
+          aria-label="目次"
+          title="目次"
+          aria-expanded={showToc}
+          disabled={toc.length === 0}
+          onClick={toggleToc}
+        >
+          <Icon name="toc" />
+        </button>
+        <button aria-label="設定" title="設定" onClick={onSettings}>
+          <Icon name="settings" />
+        </button>
+        <button
+          aria-label="前へ"
+          title="前へ"
+          disabled={loading || atStart || Boolean(error)}
+          onClick={() => turn(false)}
+        >
+          <Icon name={direction === 'rtl' ? 'next' : 'prev'} />
+        </button>
+        <span className={styles.progressLabel}>
+          {progressText(count, currentIndex, indices, progress)}
+        </span>
+        <button
+          aria-label="次へ"
+          title="次へ"
+          disabled={loading || atEnd || Boolean(error)}
+          onClick={() => turn(true)}
+        >
+          <Icon name={direction === 'rtl' ? 'prev' : 'next'} />
+        </button>
       </div>
-      <button disabled={loading || Boolean(error)} onClick={() => turn(true)}>
-        次へ
-      </button>
-    </footer>
-  </section>
+    </header>
+    {showToc && (
+      <nav className={styles.toc} aria-label="目次">
+        <Toc items={toc} goTo={goTo} />
+      </nav>
+    )}
+  </>
 )
 
-const dispose = async (current: Session) => {
-  if (current.kind === 'zip') await current.archive.close()
-  else {
-    current.removeInput()
-    current.view.close()
-    current.book.destroy()
-    current.view.remove()
-    await current.reader.close()
+export const Reader = ({
+  file,
+  settings,
+  active,
+  onClose,
+  onSettings,
+}: ReaderProps) => {
+  const host = useRef<HTMLDivElement>(null)
+  const session = useRef<Session | null>(null)
+  const generation = useRef(0)
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  const leadRef = useRef(0)
+  const columnsRef = useRef<1 | 2>(1)
+  const animation = useRef<Animation | null>(null)
+  const swipe = useRef<SwipeDirection | null>(null)
+  const imageRequest = useRef(0)
+  const activeRef = useRef(active)
+  activeRef.current = active
+  const [columns, setColumns] = useState<1 | 2>(1)
+  const [archive, setArchive] = useState<Archive | null>(null)
+  const [urls, setUrls] = useState<string[]>([])
+  const [indices, setIndices] = useState<number[]>([])
+  const [toc, setToc] = useState<TocItem[]>([])
+  const [showToc, setShowToc] = useState(false)
+  const [direction, setDirection] = useState<'ltr' | 'rtl'>('ltr')
+  const [progress, setProgress] = useState(0)
+  const [atStart, setAtStart] = useState(true)
+  const [atEnd, setAtEnd] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const refs: ZipRefs = {
+    generation,
+    session,
+    queue,
+    lead: leadRef,
+    columns: columnsRef,
+    animation,
+    swipe,
+    imageRequest,
+    active: activeRef,
   }
+  const setters: ZipSetters = {
+    setIndices,
+    setUrls,
+    setProgress,
+    setAtStart,
+    setAtEnd,
+    setError,
+  }
+  const turn = (next: boolean, swipeDirection?: SwipeDirection) =>
+    scheduleTurn(next, swipeDirection, refs, setters)
+
+  useResizeColumns(host, settings, columnsRef, setColumns)
+  useEffect(() => {
+    const current = session.current
+    if (current?.kind === 'epub') void current.epub.configure(settings, columns)
+    if (current?.kind === 'zip' && archive) scheduleZipUpdate(refs, setters)
+  }, [settings, columns, loading])
+
+  useEffect(() => {
+    const current = session.current
+    if (current?.kind === 'epub') current.epub.setActive(active)
+    if (!active) {
+      animation.current?.cancel()
+      animation.current = null
+      swipe.current = null
+      return
+    }
+    if (!host.current || current?.kind !== 'zip') return
+    scheduleZipUpdate(refs, setters)
+    return bindHostInput(host.current, 'ltr', turn)
+  }, [active, loading])
+
+  useOpenFile({
+    file,
+    active,
+    settings,
+    host,
+    refs,
+    setters,
+    setArchive,
+    setToc,
+    setUrls,
+    setShowToc,
+    setLoading,
+    setDirection,
+  })
+
+  useLayoutEffect(() => {
+    const direction = swipe.current
+    swipe.current = null
+    if (direction)
+      animatePage(
+        host.current?.querySelector(`.${styles.imagePair}`) ?? null,
+        direction,
+        animation,
+      )
+  }, [urls])
+
+  const goTo = (href: string) => {
+    setShowToc(false)
+    const current = session.current
+    if (current?.kind === 'epub') void current.epub.goTo(href)
+  }
+  const currentIndex = indices[0] ?? leadRef.current
+  const count = archive?.names.length ?? 0
+  const padding = `${settings.marginTop}px ${settings.marginRight}px ${settings.marginBottom}px ${settings.marginLeft}px`
+  return (
+    <section className={styles.reader} aria-label="読書画面">
+      <h1 className={styles.srOnly}>{file.name}</h1>
+      <ReaderControls
+        onClose={onClose}
+        onSettings={onSettings}
+        toc={toc}
+        showToc={showToc}
+        toggleToc={() => setShowToc(!showToc)}
+        goTo={goTo}
+        loading={loading}
+        atStart={atStart}
+        atEnd={atEnd}
+        error={error}
+        turn={turn}
+        count={count}
+        currentIndex={currentIndex}
+        indices={indices}
+        progress={progress}
+        direction={direction}
+      />
+      <ReaderStage
+        archive={archive}
+        indices={indices}
+        urls={urls}
+        host={host}
+        padding={padding}
+        gutter={settings.gutter}
+        count={count}
+        loading={loading}
+        error={error}
+        setError={setError}
+      />
+    </section>
+  )
 }
