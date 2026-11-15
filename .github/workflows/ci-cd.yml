@@ -1,0 +1,139 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.0
+          package-manager-cache: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        shell: bash
+
+      - name: Prepare generated types
+        run: bunx --no-install void prepare
+        shell: bash
+
+      - name: Typecheck
+        run: bun run typecheck
+        shell: bash
+
+      - name: Lint
+        run: bun run lint
+        shell: bash
+
+      - name: Check formatting
+        run: bunx --no-install prettier --check .
+        shell: bash
+
+      - name: Unit tests
+        run: bun test
+        shell: bash
+
+      - name: Server integration tests
+        run: bun run test:server
+        shell: bash
+
+      - name: Install Playwright Chromium
+        run: bunx --no-install playwright install --with-deps chromium
+        shell: bash
+
+      - name: Playwright tests
+        run: CI=true bunx --no-install playwright test --workers 1
+        shell: bash
+
+      - name: Build
+        run: bun run build
+        shell: bash
+
+  deploy:
+    name: Deploy production
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://reader.rrrr.dev
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+    steps:
+      - name: Check out workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.0
+          package-manager-cache: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        shell: bash
+
+      - name: Verify Access and deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCESS_TOKEN: ${{ secrets.CF_ACCESS_TOKEN }}
+          CF_ACCESS_READINESS_ORIGIN: https://reader.rrrr.dev
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "CLOUDFLARE_API_TOKEN is required in the production Environment." >&2
+            exit 1
+          fi
+          if [[ -z "${CF_ACCESS_TOKEN:-}" ]]; then
+            echo "CF_ACCESS_TOKEN is required in the production Environment." >&2
+            exit 1
+          fi
+
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+            --output /dev/null --write-out '%{http_code}' \
+            --header "CF-Access-Token: ${CF_ACCESS_TOKEN}" \
+            "${CF_ACCESS_READINESS_ORIGIN}/api/books")"
+          if [[ "${status}" != "200" ]]; then
+            echo "Access readiness check failed (HTTP ${status}); refresh the owner Access token before deployment." >&2
+            exit 1
+          fi
+
+          bunx --no-install void deploy --platform cloudflare
+        shell: bash
