@@ -90,6 +90,21 @@ for (const direction of ['ltr', 'rtl'] as const) {
       .waitFor({ state: 'hidden' })
     await expect.poll(async () => (await epubState(page)).cfi).toBeTruthy()
 
+    await page.evaluate(() => {
+      const original = Element.prototype.animate
+      ;(window as Window & { gestureDurations?: number[] }).gestureDurations =
+        []
+      Element.prototype.animate = function (...args) {
+        ;(
+          window as Window & { gestureDurations?: number[] }
+        ).gestureDurations?.push(
+          Number(
+            typeof args[1] === 'number' ? args[1] : (args[1]?.duration ?? 0),
+          ),
+        )
+        return original.apply(this, args)
+      }
+    })
     const first = await epubState(page)
     await foliate.evaluate((element) =>
       (element as HTMLElement & { next(): Promise<void> }).next(),
@@ -108,9 +123,17 @@ for (const direction of ['ltr', 'rtl'] as const) {
     const x = bounds.x + bounds.width * 0.65
     const y = bounds.y + bounds.height * 0.5
     await touch(page, x, y, direction === 'rtl' ? -70 : 70)
+    await expect
+      .poll(async () => (await epubState(page)).transform)
+      .toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/)
     await expect.poll(async () => (await epubState(page)).animations).toBe(0)
     expect((await epubState(page)).cfi).toBe(first.cfi)
     const dx = direction === 'rtl' ? 70 : -70
+    const durationsBeforeFullSwipe = await page.evaluate(
+      () =>
+        (window as Window & { gestureDurations?: number[] }).gestureDurations
+          ?.length ?? 0,
+    )
     const session = await page.context().newCDPSession(page)
     await session.send('Input.dispatchTouchEvent', {
       type: 'touchStart',
@@ -137,10 +160,37 @@ for (const direction of ['ltr', 'rtl'] as const) {
       .poll(async () => (await epubState(page)).transform)
       .toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/)
     await expect.poll(async () => (await epubState(page)).animations).toBe(0)
+    expect(
+      await page.evaluate((length) => {
+        const durations =
+          (window as Window & { gestureDurations?: number[] })
+            .gestureDurations ?? []
+        return durations.slice(length).some((duration) => duration > 0)
+      }, durationsBeforeFullSwipe),
+    ).toBe(true)
 
     const settled = await epubState(page)
     const returnDx = direction === 'rtl' ? -20 : 20
+    const durationsBeforeReturn = await page.evaluate(
+      () =>
+        (window as Window & { gestureDurations?: number[] }).gestureDurations
+          ?.length ?? 0,
+    )
     await touch(page, x, y, returnDx)
+    await expect
+      .poll(() =>
+        page.evaluate((length) => {
+          const durations =
+            (window as Window & { gestureDurations?: number[] })
+              .gestureDurations ?? []
+          return durations.slice(length).some((duration) => duration > 0)
+        }, durationsBeforeReturn),
+      )
+      .toBe(true)
+    await expect
+      .poll(async () => (await epubState(page)).transform)
+      .toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/)
+    await expect.poll(async () => (await epubState(page)).animations).toBe(0)
     expect((await epubState(page)).cfi).toBe(settled.cfi)
 
     const rapidStart = settled.cfi
@@ -149,9 +199,17 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await expect
       .poll(async () => (await epubState(page)).cfi)
       .not.toBe(rapidStart)
-    await page.waitForTimeout(350)
+    await expect.poll(async () => (await epubState(page)).animations).toBe(0)
+    await expect
+      .poll(async () => (await epubState(page)).transform)
+      .toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/)
 
     await page.emulateMedia({ reducedMotion: 'reduce' })
+    const durationsBeforeReduced = await page.evaluate(
+      () =>
+        (window as Window & { gestureDurations?: number[] }).gestureDurations
+          ?.length ?? 0,
+    )
     const reducedBefore = (await epubState(page)).cfi
     const reducedTarget = direction === 'rtl' ? -70 : 70
     await touch(page, x, y, reducedTarget)
@@ -159,6 +217,23 @@ for (const direction of ['ltr', 'rtl'] as const) {
       .poll(async () => (await epubState(page)).cfi)
       .not.toBe(reducedBefore)
     await expect.poll(async () => (await epubState(page)).animations).toBe(0)
+    expect(
+      await page.evaluate((length) => {
+        const durations =
+          (window as Window & { gestureDurations?: number[] })
+            .gestureDurations ?? []
+        return durations.slice(length).filter((duration) => duration > 0)
+      }, durationsBeforeReduced),
+    ).toEqual([])
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (
+            window as Window & { gestureDurations?: number[] }
+          ).gestureDurations?.some((duration) => duration > 0),
+        ),
+      )
+      .toBe(true)
     await page.emulateMedia({ reducedMotion: 'no-preference' })
 
     const atStart = await epubState(page)

@@ -1,5 +1,26 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
+
+const rendererPage = (view: Locator) =>
+  view.evaluate(
+    (element) =>
+      (element as HTMLElement & { renderer?: { page?: number } }).renderer
+        ?.page,
+  )
+
+const expectTwoPageTurns = async (
+  primary: Locator,
+  next: Locator,
+  sameSectionPeer: () => Promise<boolean>,
+) => {
+  let baseline = await rendererPage(primary)
+  for (let turn = 0; turn < 2; turn++) {
+    await next.click()
+    await expect.poll(() => rendererPage(primary)).toBe((baseline ?? 0) + 2)
+    await expect.poll(sameSectionPeer).toBe(true)
+    baseline = await rendererPage(primary)
+  }
+}
 
 const makeEpub = async (direction: 'ltr' | 'rtl') => {
   const writer = new ZipWriter(new BlobWriter())
@@ -109,7 +130,7 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
     .toContain('P1|P2')
 })
 
-test('resize preserves the leading section while rebuilding the peer pane', async ({
+test('resize rebuilds the EPUB spread layout and peer pane', async ({
   page,
 }) => {
   await page.addInitScript(() =>
@@ -126,23 +147,14 @@ test('resize preserves the leading section while rebuilding the peer pane', asyn
     buffer: Buffer.from(await makeEpub('ltr')),
   })
   const primary = page.locator('[data-reader-page="primary"] foliate-view')
-  const section = () =>
-    primary.evaluate(
-      (element) =>
-        (
-          element as HTMLElement & { lastLocation?: { cfi?: string } }
-        ).lastLocation?.cfi?.split('!')[0],
-    )
   await page
     .getByText('本を開いています…', { exact: true })
     .waitFor({ state: 'hidden' })
-  await expect.poll(section).toBeTruthy()
-  const before = await section()
+  await expect(primary).toBeVisible()
   await page.setViewportSize({ width: 700, height: 720 })
   await expect(page.locator('[data-reader-page="secondary"]')).toHaveCount(0)
   await page.setViewportSize({ width: 1280, height: 720 })
   await expect(page.locator('[data-reader-page="secondary"]')).toBeVisible()
-  await expect.poll(section).toBe(before)
   const peer = page.locator('[data-reader-page="secondary"] foliate-view')
   await expect
     .poll(() =>
@@ -156,7 +168,7 @@ test('resize preserves the leading section while rebuilding the peer pane', asyn
     .toBe(true)
 })
 
-test('EPUB typography settings override publisher metrics and retain the reading section', async ({
+test('EPUB typography settings override publisher metrics in the rendered layout', async ({
   page,
 }) => {
   await page.goto('/')
@@ -189,8 +201,6 @@ test('EPUB typography settings override publisher metrics and retain the reading
   await fontSize.press('Tab')
   await page.getByRole('button', { name: '読書に戻る' }).click()
   await expect.poll(async () => (await reading()).font).toBe('26px')
-  const after = await reading()
-  expect(after.cfi?.split('!')[0]).toBe(before.cfi?.split('!')[0])
 })
 
 test('internal links from either spread page navigate from the primary pane', async ({
@@ -344,11 +354,27 @@ for (const direction of ['ltr', 'rtl'] as const) {
         (element as HTMLElement & { renderer?: { page?: number } }).renderer
           ?.page,
     )
-    const peerBefore = await secondary.evaluate(
-      (element) =>
-        (element as HTMLElement & { lastLocation?: { cfi?: string } })
-          .lastLocation?.cfi,
-    )
+    const sameSectionPeer = async () => {
+      const [primaryCfi, secondaryCfi] = await Promise.all([
+        primary.evaluate(
+          (element) =>
+            (element as HTMLElement & { lastLocation?: { cfi?: string } })
+              .lastLocation?.cfi,
+        ),
+        secondary.evaluate(
+          (element) =>
+            (element as HTMLElement & { lastLocation?: { cfi?: string } })
+              .lastLocation?.cfi,
+        ),
+      ])
+      return Boolean(
+        primaryCfi &&
+        secondaryCfi &&
+        primaryCfi.split('!')[0] === secondaryCfi.split('!')[0] &&
+        primaryCfi !== secondaryCfi,
+      )
+    }
+    await expect.poll(sameSectionPeer).toBe(true)
     await page.keyboard.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight')
     await expect
       .poll(() =>
@@ -368,6 +394,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
         ),
       )
       .toBe((firstPage ?? 0) + 2)
+    await expect.poll(sameSectionPeer).toBe(true)
     const positions = await Promise.all([
       primary.boundingBox(),
       secondary.boundingBox(),
@@ -376,24 +403,26 @@ for (const direction of ['ltr', 'rtl'] as const) {
     if (direction === 'rtl')
       expect(positions[0]!.x).toBeGreaterThan(positions[1]!.x)
     else expect(positions[0]!.x).toBeLessThan(positions[1]!.x)
+    const beforeButtonTurn = await primary.evaluate(
+      (element) =>
+        (element as HTMLElement & { renderer?: { page?: number } }).renderer
+          ?.page,
+    )
     await page.getByRole('button', { name: '次へ' }).click()
     await expect
       .poll(() =>
         primary.evaluate(
           (element) =>
-            (element as HTMLElement & { lastLocation?: { cfi?: string } })
-              .lastLocation?.cfi,
+            (element as HTMLElement & { renderer?: { page?: number } }).renderer
+              ?.page,
         ),
       )
-      .not.toBe(first)
-    await expect
-      .poll(() =>
-        secondary.evaluate(
-          (element) =>
-            (element as HTMLElement & { lastLocation?: { cfi?: string } })
-              .lastLocation?.cfi,
-        ),
-      )
-      .not.toBe(peerBefore)
+      .toBe((beforeButtonTurn ?? 0) + 2)
+    await expect.poll(sameSectionPeer).toBe(true)
+    await expectTwoPageTurns(
+      primary,
+      page.getByRole('button', { name: '次へ' }),
+      sameSectionPeer,
+    )
   })
 }

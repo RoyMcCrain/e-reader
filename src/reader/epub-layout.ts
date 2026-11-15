@@ -2,8 +2,10 @@ export const awaitWithAbort = <T>(
   promise: Promise<T>,
   signal: AbortSignal,
 ): Promise<T> => {
-  if (signal.aborted)
+  if (signal.aborted) {
+    void promise.catch(() => undefined)
     return Promise.reject(new DOMException('Opening cancelled', 'AbortError'))
+  }
   return new Promise((resolve, reject) => {
     const abort = () =>
       reject(new DOMException('Opening cancelled', 'AbortError'))

@@ -3,7 +3,6 @@ const blockedTags =
 const navigationAttributes = new Set([
   'href',
   'src',
-  'xlink:href',
   'action',
   'formaction',
   'poster',
@@ -29,8 +28,23 @@ const isImageData = (value: string) =>
     normalizedUrl(value),
   )
 
-const sanitizeCss = (css: string) =>
-  css
+const sanitizeCss = (css: string, stylesheet = false) => {
+  let normalized: string
+  try {
+    if (stylesheet) {
+      const sheet = new CSSStyleSheet()
+      sheet.replaceSync(css)
+      normalized = [...sheet.cssRules].map((rule) => rule.cssText).join(' ')
+    } else {
+      const style = document.createElement('span').style
+      style.cssText = css
+      normalized = style.cssText
+    }
+  } catch {
+    return ''
+  }
+  if (/(?:-webkit-)?image-set\s*\(/i.test(normalized)) return ''
+  return normalized
     .replace(/@import\b(?!\s+(?:url\(\s*)?['"]?blob:)[^;]*(?:;|$)/gi, '')
     .replace(
       /url\(\s*(['"]?)(.*?)\1\s*\)/gi,
@@ -39,6 +53,7 @@ const sanitizeCss = (css: string) =>
         return /^(blob:|data:|#)/.test(url) ? match : 'none'
       },
     )
+}
 
 const removeProcessingInstructions = (doc: Document) => {
   const walker = doc.createTreeWalker(
@@ -69,46 +84,71 @@ const removeExecutableContent = (doc: Document) => {
     .forEach((element) => element.remove())
 }
 
-const sanitizeSrcset = (value: string) =>
-  value
-    .split(',')
-    .map((candidate) => candidate.trim())
-    .filter((candidate) => {
-      const url = candidate.split(/\s+/, 1)[0]
-      return url && !isUnsafeNavigation(url)
-    })
-    .join(', ')
-
 const isExecutableAttribute = (name: string) =>
   name.startsWith('on') || name === 'srcdoc' || name === 'ping'
 
-const sanitizeSrcsetAttribute = (element: Element, attribute: Attr) => {
-  const safe = sanitizeSrcset(attribute.value)
-  if (safe) element.setAttribute(attribute.name, safe)
-  else element.removeAttribute(attribute.name)
-}
+const sanitizeSrcsetAttribute = (element: Element, attribute: Attr) =>
+  element.removeAttribute(attribute.name)
 
 const allowsImageData = (element: Element, name: string, value: string) =>
   (name === 'src' && element.localName === 'img' && isImageData(value)) ||
-  ((name === 'href' || name === 'xlink:href') &&
+  (name === 'href' &&
     element.namespaceURI === 'http://www.w3.org/2000/svg' &&
     element.localName === 'image' &&
     isImageData(value))
 
+const isXlinkHref = (attribute: Attr) =>
+  attribute.namespaceURI === 'http://www.w3.org/1999/xlink' &&
+  attribute.localName.toLowerCase() === 'href'
+
+const isXmlBase = (attribute: Attr) =>
+  attribute.namespaceURI === 'http://www.w3.org/XML/1998/namespace' &&
+  attribute.localName.toLowerCase() === 'base'
+
+const sanitizeXlinkHref = (element: Element, attribute: Attr) => {
+  if (
+    isUnsafeNavigation(attribute.value) &&
+    !allowsImageData(element, 'href', attribute.value)
+  )
+    element.removeAttributeNS(attribute.namespaceURI, attribute.localName)
+}
+
+const removeUnsafeNavigation = (
+  element: Element,
+  attribute: Attr,
+  name: string,
+) => {
+  if (
+    !navigationAttributes.has(name) ||
+    !isUnsafeNavigation(attribute.value) ||
+    allowsImageData(element, name, attribute.value)
+  )
+    return false
+  element.removeAttribute(attribute.name)
+  return true
+}
+
 const sanitizeAttribute = (element: Element, attribute: Attr) => {
   const name = attribute.name.toLowerCase()
   const value = attribute.value
-  if (isExecutableAttribute(name)) element.removeAttribute(attribute.name)
-  else if (name === 'srcset') sanitizeSrcsetAttribute(element, attribute)
-  else if (
-    navigationAttributes.has(name) &&
-    isUnsafeNavigation(value) &&
-    !allowsImageData(element, name, value)
-  ) {
-    element.removeAttribute(attribute.name)
-  } else if (name === 'style') {
-    element.setAttribute(attribute.name, sanitizeCss(value))
+  if (isXmlBase(attribute)) {
+    element.removeAttributeNS(attribute.namespaceURI, attribute.localName)
+    return
   }
+  if (isXlinkHref(attribute)) {
+    sanitizeXlinkHref(element, attribute)
+    return
+  }
+  if (isExecutableAttribute(name)) {
+    element.removeAttribute(attribute.name)
+    return
+  }
+  if (name === 'srcset') {
+    sanitizeSrcsetAttribute(element, attribute)
+    return
+  }
+  if (removeUnsafeNavigation(element, attribute, name)) return
+  if (name === 'style') element.setAttribute(attribute.name, sanitizeCss(value))
 }
 
 const sanitizeAttributes = (doc: Document) => {
@@ -117,7 +157,7 @@ const sanitizeAttributes = (doc: Document) => {
       sanitizeAttribute(element, attribute)
   }
   doc.querySelectorAll('style').forEach((style) => {
-    style.textContent = sanitizeCss(style.textContent ?? '')
+    style.textContent = sanitizeCss(style.textContent ?? '', true)
   })
 }
 

@@ -63,7 +63,11 @@ for (const direction of ['ltr', 'rtl'] as const) {
           ),
         )
       })
-    const waitForLayout = async (fontSize: number, lineHeight: number) => {
+    const waitForLayout = async (
+      fontSize: number,
+      lineHeight: number,
+      marginLeft = 8,
+    ) => {
       await expect
         .poll(() =>
           view.evaluate(
@@ -78,10 +82,19 @@ for (const direction of ['ltr', 'rtl'] as const) {
                 Math.abs(line - expected.lineHeight) < 0.5
               )
             },
-            { fontSize, lineHeight },
+            { fontSize, lineHeight, marginLeft },
           ),
         )
         .toBe(true)
+      await expect
+        .poll(() =>
+          page
+            .getByLabel('読書ページ')
+            .evaluate((host) =>
+              Number.parseFloat(getComputedStyle(host).paddingLeft),
+            ),
+        )
+        .toBe(marginLeft)
       await flushLayout()
     }
     const next = page.getByRole('button', { name: '次へ' })
@@ -129,16 +142,19 @@ for (const direction of ['ltr', 'rtl'] as const) {
           return false
         }
       }, savedCfi)
+    let marginLeft = 8
     const apply = async (
       label: string,
       value: string,
       fontSize: number,
       lineHeight: number,
+      nextMarginLeft = marginLeft,
     ) => {
       const input = page.getByLabel(label)
       await input.fill(value)
       await input.press('Tab')
-      await waitForLayout(fontSize, lineHeight)
+      await waitForLayout(fontSize, lineHeight, nextMarginLeft)
+      marginLeft = nextMarginLeft
     }
 
     await waitForLayout(18, 32.4)
@@ -148,7 +164,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await expect.poll(() => preservesPoint(saved)).toBe(true)
     await apply('行間の値', '2.1', 24, 50.4)
     await expect.poll(() => preservesPoint(saved)).toBe(true)
-    await apply('左の値', '24', 24, 50.4)
+    await apply('左の値', '24', 24, 50.4, 24)
     await expect.poll(() => preservesPoint(saved)).toBe(true)
     await page.getByRole('button', { name: '読書に戻る' }).click()
     await expect.poll(() => preservesPoint(saved)).toBe(true)
@@ -167,9 +183,68 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await page.getByRole('button', { name: '読書に戻る' }).click()
     await expect.poll(() => preservesPoint(saved)).toBe(true)
 
+    const savedPointIsVisible = (savedCfi: string) =>
+      view.evaluate((el, cfi) => {
+        const epub = el as PositionView
+        const content = epub.renderer?.getContents()[0]
+        if (!content) return false
+        try {
+          const range = epub.resolveCFI(cfi).anchor(content.doc)
+          const child = range.startContainer.childNodes[range.startOffset]
+          if (child?.nodeType === Node.TEXT_NODE) range.setStart(child, 0)
+          range.collapse(true)
+          const rect = range.getBoundingClientRect()
+          const frame = content.doc.defaultView?.frameElement
+          const bounds = epub.getBoundingClientRect()
+          if (!frame || (rect.width === 0 && rect.height === 0)) return false
+          const frameBounds = frame.getBoundingClientRect()
+          const left = rect.left + frameBounds.left
+          const top = rect.top + frameBounds.top
+          const right = left + Math.max(rect.width, 1)
+          const bottom = top + Math.max(rect.height, 1)
+          return (
+            right > bounds.left &&
+            left < bounds.right &&
+            bottom > bounds.top &&
+            top < bounds.bottom
+          )
+        } catch {
+          return false
+        }
+      }, savedCfi)
+    const waitForViewportLayout = async (width: number, height: number) => {
+      await expect
+        .poll(async () =>
+          view.evaluate(
+            (el, size) => {
+              const host = el.closest('[aria-label="読書ページ"]')
+              const content = (el as PositionView).renderer?.getContents()[0]
+                ?.doc
+              const frame = content?.defaultView?.frameElement
+              return Boolean(
+                host &&
+                content?.defaultView &&
+                frame &&
+                window.innerWidth === size.width &&
+                window.innerHeight === size.height &&
+                host.getBoundingClientRect().width > 0 &&
+                Math.abs(
+                  content.defaultView.innerWidth -
+                    frame.getBoundingClientRect().width,
+                ) < 1,
+              )
+            },
+            { width, height },
+          ),
+        )
+        .toBe(true)
+      await flushLayout()
+      await expect.poll(() => preservesPoint(saved)).toBe(true)
+      await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
+    }
     await page.setViewportSize({ width: 390, height: 844 })
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
+    await waitForViewportLayout(390, 844)
     await page.setViewportSize({ width: 1280, height: 900 })
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
+    await waitForViewportLayout(1280, 900)
   })
 }

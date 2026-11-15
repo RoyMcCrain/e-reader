@@ -94,7 +94,8 @@ const expectImageColor = async (
 ) => {
   const color = await page
     .getByRole('img', { name: new RegExp(`画像 ${imageNumber} /`) })
-    .evaluate((image: HTMLImageElement) => {
+    .evaluate(async (image: HTMLImageElement) => {
+      await image.decode()
       const canvas = document.createElement('canvas')
       canvas.width = canvas.height = 1
       const context = canvas.getContext('2d')!
@@ -145,14 +146,17 @@ test('auto spread responds to content width without changing the current lead', 
   await page.setViewportSize({ width: 1100, height: 850 })
   const dimensions = await page
     .getByRole('img', { name: '画像 3 / 5' })
-    .evaluate((image: HTMLImageElement) => ({
-      natural: [image.naturalWidth, image.naturalHeight],
-      rendered: [
-        image.getBoundingClientRect().width,
-        image.getBoundingClientRect().height,
-      ],
-      source: image.currentSrc,
-    }))
+    .evaluate(async (image: HTMLImageElement) => {
+      await image.decode()
+      return {
+        natural: [image.naturalWidth, image.naturalHeight],
+        rendered: [
+          image.getBoundingClientRect().width,
+          image.getBoundingClientRect().height,
+        ],
+        source: image.currentSrc,
+      }
+    })
   expect(dimensions.natural).toEqual([400, 600])
   expect(dimensions.source).toContain('blob:')
   expect(dimensions.rendered[0]).toBeGreaterThan(dimensions.natural[0])
@@ -161,19 +165,23 @@ test('auto spread responds to content width without changing the current lead', 
   await expect(page.getByRole('button', { name: '次へ' })).toBeDisabled()
   const finalImage = await page
     .getByRole('img', { name: '画像 5 / 5' })
-    .evaluate((image: HTMLImageElement) => ({
-      natural: [image.naturalWidth, image.naturalHeight],
-      rendered: [
-        image.getBoundingClientRect().width,
-        image.getBoundingClientRect().height,
-      ],
-    }))
+    .evaluate(async (image: HTMLImageElement) => {
+      await image.decode()
+      return {
+        natural: [image.naturalWidth, image.naturalHeight],
+        rendered: [
+          image.getBoundingClientRect().width,
+          image.getBoundingClientRect().height,
+        ],
+      }
+    })
   expect(finalImage.natural).toEqual([400, 600])
   expect(finalImage.rendered[0]).toBeGreaterThan(0)
   await expectImageColor(page, 5, [150, 30, 180])
   const finalBounds = await page
     .getByRole('img', { name: '画像 5 / 5' })
-    .evaluate((image: HTMLImageElement) => {
+    .evaluate(async (image: HTMLImageElement) => {
+      await image.decode()
       const stage = document.querySelector('[aria-label="読書ページ"]')!
       const stageRect = stage.getBoundingClientRect()
       const style = getComputedStyle(stage)

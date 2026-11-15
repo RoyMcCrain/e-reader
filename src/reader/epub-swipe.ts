@@ -14,14 +14,15 @@ const controllers = new WeakMap<
   { controller: Controller; refs: number }
 >()
 
-const interactiveTarget = (target: EventTarget | null) => {
-  if (!(target instanceof Element)) return false
-  return Boolean(
-    target.closest(
+const interactiveTarget = (target: EventTarget | null) =>
+  Boolean(
+    target &&
+    'nodeType' in target &&
+    (target as Node).nodeType === 1 &&
+    (target as Element).closest(
       'a, button, input, select, textarea, [contenteditable]:not([contenteditable="false"])',
     ),
   )
-}
 
 const createSwipe = (
   view: FoliateViewElement,
@@ -54,14 +55,17 @@ const createSwipe = (
     return next ? !renderer?.atEnd : !renderer?.atStart
   }
   const onStart = (event: TouchEvent) => {
-    event.stopImmediatePropagation()
+    suppressClick = false
+    window.clearTimeout(clickTimer)
+    const target = event.target
+    const current = event.currentTarget as Node
     const doc =
-      event.currentTarget instanceof Document
-        ? event.currentTarget
-        : host.ownerDocument
+      current.nodeType === 9
+        ? (current as Document)
+        : (current.ownerDocument ?? host.ownerDocument)
     if (
       event.touches.length !== 1 ||
-      interactiveTarget(event.target) ||
+      interactiveTarget(target) ||
       Boolean(doc.getSelection()?.toString())
     ) {
       start = null
@@ -69,13 +73,14 @@ const createSwipe = (
       reset()
       return
     }
+    event.stopImmediatePropagation()
     reset()
     gesture += 1
     start = point(event.touches[0])
-    startDocument =
-      event.currentTarget instanceof Document ? event.currentTarget : null
+    startDocument = doc === host.ownerDocument ? null : doc
   }
   const onMove = (event: TouchEvent) => {
+    if (!start) return
     event.stopImmediatePropagation()
     if (event.touches.length !== 1) {
       start = null
@@ -83,7 +88,6 @@ const createSwipe = (
       reset()
       return
     }
-    if (!start) return
     const current = point(event.touches[0])
     const dx = current.x - start.x
     const dy = current.y - start.y
@@ -117,8 +121,8 @@ const createSwipe = (
       .catch(() => undefined)
   }
   const onEnd = (event: TouchEvent) => {
-    event.stopImmediatePropagation()
     if (!start) return
+    event.stopImmediatePropagation()
     const end = event.changedTouches[0]
     const dx = end ? point(end).x - start.x : 0
     const dy = end ? point(end).y - start.y : 0
@@ -162,8 +166,8 @@ const createSwipe = (
       })
   }
   const onCancel = (event: Event) => {
-    event.stopImmediatePropagation()
     if (!start) return
+    event.stopImmediatePropagation()
     const matrix = new DOMMatrixReadOnly(getComputedStyle(surface).transform)
     start = null
     startDocument = null
@@ -205,8 +209,7 @@ const createSwipe = (
     }
   }
   const hostTouch = (event: TouchEvent) => {
-    if (!host.contains(event.target as Node) || interactiveTarget(event.target))
-      return
+    if (!host.contains(event.target as Node)) return
     if (event.type === 'touchstart') onStart(event)
     else if (event.type === 'touchmove') onMove(event)
     else if (event.type === 'touchend') onEnd(event)

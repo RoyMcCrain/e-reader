@@ -94,6 +94,7 @@ const updateZip = async (
     return
   refs.lead.current = lead
   refs.swipe.current = swipeDirection ?? null
+  setters.setError('')
   setters.setIndices(indices)
   setters.setUrls(urls)
   setters.setProgress(
@@ -372,6 +373,12 @@ const useOpenFile = ({
   }, [file])
 }
 
+const navigationDisabled = (
+  loading: boolean,
+  atBoundary: boolean,
+  fatalError: boolean,
+) => loading || atBoundary || fatalError
+
 const progressText = (
   count: number,
   currentIndex: number,
@@ -394,6 +401,7 @@ interface ReaderControlsProps {
   loading: boolean
   atStart: boolean
   atEnd: boolean
+  hasSession: boolean
   error: string
   turn: (next: boolean) => void
   count: number
@@ -413,6 +421,7 @@ const ReaderControls = ({
   loading,
   atStart,
   atEnd,
+  hasSession,
   error,
   turn,
   count,
@@ -442,7 +451,11 @@ const ReaderControls = ({
         <button
           aria-label="前へ"
           title="前へ"
-          disabled={loading || atStart || Boolean(error)}
+          disabled={navigationDisabled(
+            loading,
+            atStart,
+            Boolean(error) && !hasSession,
+          )}
           onClick={() => turn(false)}
         >
           <Icon name={direction === 'rtl' ? 'next' : 'prev'} />
@@ -453,7 +466,11 @@ const ReaderControls = ({
         <button
           aria-label="次へ"
           title="次へ"
-          disabled={loading || atEnd || Boolean(error)}
+          disabled={navigationDisabled(
+            loading,
+            atEnd,
+            Boolean(error) && !hasSession,
+          )}
           onClick={() => turn(true)}
         >
           <Icon name={direction === 'rtl' ? 'prev' : 'next'} />
@@ -560,7 +577,7 @@ export const Reader = ({
   useLayoutEffect(() => {
     const direction = swipe.current
     swipe.current = null
-    if (direction)
+    if (direction && activeRef.current)
       animatePage(
         host.current?.querySelector(`.${styles.imagePair}`) ?? null,
         direction,
@@ -589,6 +606,7 @@ export const Reader = ({
         loading={loading}
         atStart={atStart}
         atEnd={atEnd}
+        hasSession={session.current !== null}
         error={error}
         turn={turn}
         count={count}

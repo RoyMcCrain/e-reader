@@ -10,7 +10,7 @@ declare module 'foliate-js/epub.js' {
     cfi?: string
   }
   export interface EpubBook {
-    dir?: 'ltr' | 'rtl'
+    dir: string
     toc?: TocItem[]
     sections: EpubSection[]
     rendition: { layout?: string; spread?: string }
@@ -25,7 +25,7 @@ declare module 'foliate-js/epub.js' {
       getSize(path: string): number
     })
     init(): Promise<void>
-    dir?: string
+    dir: string
     toc?: TocItem[]
     transformTarget: EventTarget
     destroy(): void
@@ -65,7 +65,6 @@ declare module 'foliate-js/view.js' {
     close(): void
     lastLocation?: FoliateLocation
     renderer?: FoliateRenderer | null
-    dir?: string
     book: EpubBook | null
   }
   export interface FoliateLoadDetail {

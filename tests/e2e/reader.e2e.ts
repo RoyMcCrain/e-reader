@@ -62,7 +62,10 @@ test('a ZIP swipe animates the incoming page in its travel direction', async ({
             animation.effect as KeyframeEffect | null
           )?.getKeyframes()
           const transform = frames?.[0]?.transform
-          return typeof transform === 'string' && transform.includes('32px')
+          return (
+            typeof transform === 'string' &&
+            /translateX\(32px\)/.test(transform)
+          )
         }),
       ),
     )
@@ -79,13 +82,13 @@ test('landing is usable on desktop and mobile', async ({ page }) => {
     page.getByRole('button', { name: 'ファイルを選ぶ' }),
   ).toBeVisible()
   await expect(
-    page.getByText('本のデータはこのブラウザーの外へ送られません。'),
+    page.getByText(
+      '端末から選んだ本はアップロードされません。クラウドの本は非公開ストレージから読み込みます。',
+    ),
   ).toBeVisible()
 })
 
-test('ZIP images turn rapidly in natural order and remain within bounds', async ({
-  page,
-}) => {
+test('ZIP images turn rapidly and remain within bounds', async ({ page }) => {
   await forceSingleSpread(page)
   const pixel = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZt8AAAAASUVORK5CYII=',

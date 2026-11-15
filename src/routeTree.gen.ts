@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConfigRouteImport } from './routes/config'
+import { Route as ApiBooksRouteImport } from './routes/api.books'
+import { Route as ApiBooksIdRouteImport } from './routes/api.books.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +24,48 @@ const ConfigRoute = ConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBooksRoute = ApiBooksRouteImport.update({
+  id: '/api/books',
+  path: '/api/books',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBooksIdRoute = ApiBooksIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiBooksRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
+  '/api/books': typeof ApiBooksRouteWithChildren
+  '/api/books/$id': typeof ApiBooksIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
+  '/api/books': typeof ApiBooksRouteWithChildren
+  '/api/books/$id': typeof ApiBooksIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
+  '/api/books': typeof ApiBooksRouteWithChildren
+  '/api/books/$id': typeof ApiBooksIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/config'
+  fullPaths: '/' | '/config' | '/api/books' | '/api/books/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/config'
-  id: '__root__' | '/' | '/config'
+  to: '/' | '/config' | '/api/books' | '/api/books/$id'
+  id: '__root__' | '/' | '/config' | '/api/books' | '/api/books/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConfigRoute: typeof ConfigRoute
+  ApiBooksRoute: typeof ApiBooksRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +84,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/books': {
+      id: '/api/books'
+      path: '/api/books'
+      fullPath: '/api/books'
+      preLoaderRoute: typeof ApiBooksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/books/$id': {
+      id: '/api/books/$id'
+      path: '/$id'
+      fullPath: '/api/books/$id'
+      preLoaderRoute: typeof ApiBooksIdRouteImport
+      parentRoute: typeof ApiBooksRoute
+    }
   }
 }
+
+interface ApiBooksRouteChildren {
+  ApiBooksIdRoute: typeof ApiBooksIdRoute
+}
+
+const ApiBooksRouteChildren: ApiBooksRouteChildren = {
+  ApiBooksIdRoute: ApiBooksIdRoute,
+}
+
+const ApiBooksRouteWithChildren = ApiBooksRoute._addFileChildren(
+  ApiBooksRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConfigRoute: ConfigRoute,
+  ApiBooksRoute: ApiBooksRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
+import {
+  BlobWriter,
+  TextReader,
+  ZipReader,
+  ZipWriter,
+  type Entry,
+} from '@zip.js/zip.js'
 import { openImageArchive, orderImages } from '../src/reader/archive'
 
 const makeArchive = async (files: Record<string, string>) => {
@@ -10,6 +16,46 @@ const makeArchive = async (files: Record<string, string>) => {
 }
 
 describe('ZIP画像順序', () => {
+  test('公開アーカイブ読み込みは上限超過でZIP列挙を停止する', async () => {
+    const original = ZipReader.prototype.getEntriesGenerator
+    let requested = 0
+    ZipReader.prototype.getEntriesGenerator = async function* () {
+      while (true) {
+        requested++
+        if (requested > 5001) throw new Error('禁止された後続項目')
+        yield {
+          filename: `${requested}.txt`,
+          uncompressedSize: 0,
+          directory: false,
+        } as Entry
+      }
+    } as typeof original
+    try {
+      await expect(
+        openImageArchive(new File([new Uint8Array()], 'bounded.zip')),
+      ).rejects.toThrow('上限を超えています')
+      expect(requested).toBe(5001)
+    } finally {
+      ZipReader.prototype.getEntriesGenerator = original
+    }
+  })
+  test('実ZIP内の重複画像名を拒否する', async () => {
+    const archive = await makeArchive({
+      'page1.jpg': 'one',
+      'page2.jpg': 'two',
+    })
+    const bytes = new Uint8Array(await archive.arrayBuffer())
+    const first = new TextEncoder().encode('page1.jpg')
+    const second = new TextEncoder().encode('page2.jpg')
+    for (let offset = 0; offset <= bytes.length - second.length; offset++) {
+      if (second.every((byte, index) => bytes[offset + index] === byte))
+        bytes.set(first, offset)
+    }
+    await expect(
+      openImageArchive(new File([bytes], 'duplicate.zip')),
+    ).rejects.toThrow('重複した画像項目')
+  })
+
   test('自然順に並び、隠し祖先・macOS項目や非画像を除く', () => {
     expect(
       orderImages([

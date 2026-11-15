@@ -1,3 +1,4 @@
+import { collectZipEntries } from './zip-entries'
 import {
   BlobReader,
   BlobWriter,
@@ -5,8 +6,6 @@ import {
   type FileEntry,
 } from '@zip.js/zip.js'
 
-const MAX_ENTRIES = 5000
-const MAX_TOTAL = 1_000_000_000
 const MAX_IMAGE = 100_000_000
 const CACHE_SIZE = 3
 const imagePattern = /\.(jpe?g|png|webp|gif|avif|bmp)$/i
@@ -29,16 +28,12 @@ export const openImageArchive = async (file: File) => {
   const reader = new ZipReader(new BlobReader(file))
   let entries
   try {
-    entries = await reader.getEntries()
+    entries = await collectZipEntries(reader.getEntriesGenerator())
   } catch (error) {
     await reader.close()
     throw error
   }
-  if (
-    !entries.length ||
-    entries.length > MAX_ENTRIES ||
-    entries.reduce((sum, entry) => sum + entry.uncompressedSize, 0) > MAX_TOTAL
-  ) {
+  if (!entries.length) {
     await reader.close()
     throw new Error('ZIPの項目数または展開サイズが上限を超えています。')
   }
@@ -53,7 +48,15 @@ export const openImageArchive = async (file: File) => {
     await reader.close()
     throw new Error('画像が見つからないZIPファイルです。')
   }
-  const byName = new Map(entries.map((entry) => [entry.filename, entry]))
+  const imageNames = new Set(names)
+  const imageEntries = entries.filter(
+    (entry) => !entry.directory && imageNames.has(entry.filename),
+  )
+  if (imageNames.size !== names.length) {
+    await reader.close()
+    throw new Error('重複した画像項目があるZIPファイルです。')
+  }
+  const byName = new Map(imageEntries.map((entry) => [entry.filename, entry]))
   const cache = new Map<number, string>()
   const inflight = new Map<number, Promise<string>>()
   let closed = false

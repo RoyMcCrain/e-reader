@@ -10,7 +10,17 @@ const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
   let last: Point | null = null
   let cancelled = false
   let suppressClick = false
+  let suppressionTimer: number | undefined
   const onStart = (event: TouchEvent) => {
+    if (suppressionTimer !== undefined) window.clearTimeout(suppressionTimer)
+    suppressionTimer = undefined
+    suppressClick = false
+    if (isIgnoredGestureTarget(event.target)) {
+      start = null
+      last = null
+      cancelled = true
+      return
+    }
     start =
       event.touches.length === 1
         ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
@@ -20,9 +30,10 @@ const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
     event.stopImmediatePropagation()
   }
   const onMove = (event: TouchEvent) => {
+    if (!start) return
     event.stopImmediatePropagation()
     if (event.touches.length > 1) cancelled = true
-    else if (start && event.touches.length === 1) {
+    else if (event.touches.length === 1) {
       last = { x: event.touches[0].clientX, y: event.touches[0].clientY }
       const dx = last.x - start.x
       const dy = last.y - start.y
@@ -31,27 +42,33 @@ const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
     }
   }
   const onEnd = (event: TouchEvent) => {
+    if (!start) return
     event.stopImmediatePropagation()
-    if (cancelled || !start) {
+    if (cancelled) {
       start = null
       last = null
       cancelled = true
       return
     }
-    const finish = event.changedTouches[0] ?? last ?? start
-    const dx = finish.clientX - start.x
-    const dy = finish.clientY - start.y
+    const touch = event.changedTouches[0]
+    const finish = touch
+      ? { x: touch.clientX, y: touch.clientY }
+      : (last ?? start)
+    const dx = finish.x - start.x
+    const dy = finish.y - start.y
     start = null
     last = null
     if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.25) return
     event.preventDefault()
     suppressClick = true
-    window.setTimeout(() => {
+    suppressionTimer = window.setTimeout(() => {
       suppressClick = false
+      suppressionTimer = undefined
     }, 500)
     turn(direction === 'rtl' ? dx > 0 : dx < 0, dx < 0 ? 'left' : 'right')
   }
   const onCancel = (event: Event) => {
+    if (!start) return
     event.stopImmediatePropagation()
     start = null
     last = null
@@ -83,16 +100,27 @@ const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
     target.removeEventListener('touchmove', onMove as EventListener, true)
     target.removeEventListener('touchend', onEnd as EventListener, true)
     target.removeEventListener('touchcancel', onCancel, true)
+    if (suppressionTimer !== undefined) window.clearTimeout(suppressionTimer)
+    suppressionTimer = undefined
   }
+}
+
+const elementTarget = (target: EventTarget | null) => {
+  const node = target as Node | null
+  return node?.nodeType === 1 ? (node as Element) : null
 }
 
 const isEditableTarget = (target: EventTarget | null) =>
   Boolean(
-    target &&
-    'nodeType' in target &&
-    (target as Node).nodeType === 1 &&
-    (target as Element).closest(
+    elementTarget(target)?.closest(
       'input, textarea, select, button, [contenteditable]:not([contenteditable="false"])',
+    ),
+  )
+
+const isIgnoredGestureTarget = (target: EventTarget | null) =>
+  Boolean(
+    elementTarget(target)?.closest(
+      'a, button, input, select, textarea, label, form, [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"])',
     ),
   )
 
@@ -129,13 +157,16 @@ const bindKeys = (doc: Document, direction: Direction, turn: Turn) => {
   return () => doc.removeEventListener('keydown', key)
 }
 
-const ignoredClick = (event: MouseEvent) => {
-  const target = event.target
-  return Boolean(
-    target &&
-    'nodeType' in target &&
-    (target as Element).closest('a, button, input, select, textarea'),
+const ignoredClick = (event: MouseEvent) =>
+  Boolean(
+    elementTarget(event.target)?.closest(
+      'a, button, input, select, textarea, form',
+    ),
   )
+
+const hasSelection = (doc: Document) => {
+  const selection = doc.getSelection()
+  return Boolean(selection && !selection.isCollapsed)
 }
 
 const bindEpubClick = (
@@ -145,7 +176,7 @@ const bindEpubClick = (
   turn: Turn,
 ) => {
   const click = (event: MouseEvent) => {
-    if (ignoredClick(event)) return
+    if (ignoredClick(event) || hasSelection(doc)) return
     const frame = doc.defaultView?.frameElement
     const FrameElement = host.ownerDocument.defaultView?.HTMLElement
     if (!frame || !FrameElement || !(frame instanceof FrameElement)) return
@@ -165,10 +196,10 @@ export const bindHostInput = (
 ) => {
   const removeSwipe = host.querySelector('foliate-view')
     ? () => undefined
-    : bindSwipe(host.ownerDocument, direction, turn)
+    : bindSwipe(host, direction, turn)
   const removeKeys = bindKeys(host.ownerDocument, direction, turn)
   const click = (event: MouseEvent) => {
-    if (ignoredClick(event)) return
+    if (ignoredClick(event) || hasSelection(host.ownerDocument)) return
     const rect = host.getBoundingClientRect()
     if (event.clientX < rect.left + rect.width * 0.22) turn(direction === 'rtl')
     else if (event.clientX > rect.right - rect.width * 0.22)

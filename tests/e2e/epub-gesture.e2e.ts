@@ -145,11 +145,25 @@ for (const direction of ['ltr', 'rtl'] as const) {
     const settled = await state(page)
     const next = page.getByRole('button', { name: '次へ' })
     const previous = page.getByRole('button', { name: '前へ' })
-    await next.click()
-    await next.click()
-    const twoSpreadsAhead = (await state(page)).map((pane) => pane.cfi)
-    await previous.click()
-    await previous.click()
+    let reference = settled.map((pane) => pane.cfi)
+    for (let turn = 0; turn < 2; turn++) {
+      await next.click()
+      await expect
+        .poll(async () => (await state(page)).map((pane) => pane.cfi))
+        .not.toEqual(reference)
+      reference = (await state(page)).map((pane) => pane.cfi)
+    }
+    const twoSpreadsAhead = reference
+    for (let turn = 0; turn < 2; turn++) {
+      await previous.click()
+      await expect
+        .poll(async () => (await state(page)).map((pane) => pane.cfi))
+        .not.toEqual(reference)
+      reference = (await state(page)).map((pane) => pane.cfi)
+    }
+    await expect
+      .poll(async () => (await state(page)).map((pane) => pane.cfi))
+      .toEqual(settled.map((pane) => pane.cfi))
     await dispatchSwipe(page, x, y, dx)
     await dispatchSwipe(page, x, y, dx)
     await expect
@@ -167,6 +181,65 @@ for (const direction of ['ltr', 'rtl'] as const) {
     expect((await state(page)).map((pane) => pane.animations)).toEqual([0, 0])
     await context.close()
     expect(settled[0].cfi).not.toBe(before[0].cfi)
+  })
+
+  test(`EPUB ${direction} iframe controls do not claim swipes or stale clicks`, async ({
+    browser,
+  }) => {
+    const { context, page } = await openBook(browser, direction)
+    const bounds = await page.getByLabel('読書ページ').boundingBox()
+    if (!bounds) throw new Error('Reader page has no bounds')
+    await dispatchSwipe(
+      page,
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+      direction === 'ltr' ? -100 : 100,
+    )
+    const freshTap = await page
+      .locator('foliate-view')
+      .first()
+      .evaluate((element) => {
+        const view = element as HTMLElement & {
+          renderer?: { getContents(): Array<{ doc: Document }> }
+        }
+        const doc = view.renderer?.getContents()[0]?.doc
+        if (!doc) throw new Error('EPUB iframe document is unavailable')
+        const anchor = doc.createElement('a')
+        anchor.href = '#gesture-destination'
+        doc.body.append(anchor)
+        let reached = false
+        anchor.addEventListener('click', () => {
+          reached = true
+        })
+        const touch = new Touch({
+          identifier: 1,
+          target: anchor,
+          clientX: 30,
+          clientY: 30,
+        })
+        anchor.dispatchEvent(
+          new TouchEvent('touchstart', {
+            bubbles: true,
+            touches: [touch],
+            targetTouches: [touch],
+            changedTouches: [touch],
+          }),
+        )
+        anchor.dispatchEvent(
+          new TouchEvent('touchend', {
+            bubbles: true,
+            changedTouches: [touch],
+          }),
+        )
+        const click = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+        })
+        anchor.dispatchEvent(click)
+        return reached
+      })
+    expect(freshTap).toBe(true)
+    await context.close()
   })
 
   test(`EPUB ${direction} input detaches in settings and rebinds once on return`, async ({
@@ -221,8 +294,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
   }) => {
     const { context, page } = await openBook(browser, direction)
     const before = await state(page)
-    const bounds = await page.getByLabel('読書ページ').boundingBox()
-    if (!bounds) throw new Error('Reader page has no bounds')
+    const bounds = (await page.getByLabel('読書ページ').boundingBox())!
     const x = bounds.x + bounds.width / 2
     const y = bounds.y + bounds.height / 2
     await dispatchSwipe(page, x, y, direction === 'ltr' ? -20 : 20)
@@ -271,6 +343,14 @@ for (const direction of ['ltr', 'rtl'] as const) {
         { x: gutterX + (direction === 'ltr' ? -80 : 80), y: paneBounds[0].y },
       ],
     })
+    await page.evaluate(() => new Promise(requestAnimationFrame))
+    const dragged = await state(page)
+    expect(
+      dragged.map((pane, index) => pane.x - paneBounds[index].left),
+    ).toEqual([
+      expect.closeTo(direction === 'ltr' ? -80 : 80, 0),
+      expect.closeTo(direction === 'ltr' ? -80 : 80, 0),
+    ])
     await hostTouch.send('Input.dispatchTouchEvent', {
       type: 'touchCancel',
       touchPoints: [],
