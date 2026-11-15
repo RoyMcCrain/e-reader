@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { columnsForWidth, nextLead, visibleIndices } from '../src/reader/layout'
+import { columnsForWidth, nextLead, visibleIndices } from '#lib/reader/layout'
 
 describe('responsive reader layout', () => {
   test('auto layout changes at the content-width threshold', () => {

@@ -6,7 +6,7 @@ import {
   readSettings,
   writeSettings,
   type ReaderSettings,
-} from '../reader/preferences'
+} from '#lib/reader/preferences'
 
 interface ReaderApp {
   file: File | undefined

@@ -6,7 +6,7 @@ import {
   ZipWriter,
   type Entry,
 } from '@zip.js/zip.js'
-import { openImageArchive, orderImages } from '../src/reader/archive'
+import { openImageArchive, orderImages } from '#lib/reader/archive'
 
 const makeArchive = async (files: Record<string, string>) => {
   const writer = new ZipWriter(new BlobWriter())

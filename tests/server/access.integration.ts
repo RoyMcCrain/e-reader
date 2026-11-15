@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { Miniflare } from 'miniflare'
-import { handleLibrary, type LibraryEnv } from '../../src/server/library.ts'
+import { handleLibrary, type LibraryEnv } from '#server/library.ts'
 
 const team = 'reader-test.cloudflareaccess.com'
 const issuer = `https://${team}`

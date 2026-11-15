@@ -1,5 +1,5 @@
 import type { FoliateViewElement } from 'foliate-js/view.js'
-import { bindEpubSwipe } from './epub-swipe'
+import { bindEpubSwipe } from '#lib/reader/epub-swipe'
 
 type Direction = 'rtl' | 'ltr'
 type Turn = (next: boolean, swipeDirection?: 'left' | 'right') => void

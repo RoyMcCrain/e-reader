@@ -8,15 +8,15 @@ import {
   type SetStateAction,
 } from 'react'
 import type { TocItem } from 'foliate-js/epub.js'
-import { openEpub } from './epub'
-import type { EpubSession } from './epub-types'
-import type { ReaderSettings } from './preferences'
-import { bindHostInput } from './input'
-import { openImageArchive } from './archive'
-import { animatePage, type SwipeDirection } from './motion'
-import { columnsForWidth, nextLead, visibleIndices } from './layout'
-import { Icon } from './Icon'
-import styles from './Reader.module.css'
+import { openEpub } from '#lib/reader/epub'
+import type { EpubSession } from '#lib/reader/epub-types'
+import type { ReaderSettings } from '#lib/reader/preferences'
+import { bindHostInput } from '#lib/reader/input'
+import { openImageArchive } from '#lib/reader/archive'
+import { animatePage, type SwipeDirection } from '#lib/reader/motion'
+import { columnsForWidth, nextLead, visibleIndices } from '#lib/reader/layout'
+import { Icon } from '#components/reader/Icon'
+import styles from '#components/reader/Reader.module.css'
 
 type Archive = Awaited<ReturnType<typeof openImageArchive>>
 type Session =
