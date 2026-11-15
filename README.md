@@ -53,6 +53,22 @@ Cloudflare管理用のログイン（`bunx void cloudflare login`）と、アプ
 
 初回の公開URLなしデプロイでは、Workerが作成済みでもURLを確認できずCLIが停止する場合があります。接続先を設定したうえで `void project status` を確認し、Access保護済みの `reader.rrrr.dev` を `void domain add reader.rrrr.dev` で接続します。現在のルートは `void.config.ts` と `void.lock.json` に保存しています。再デプロイのためにAccessを無効にしないでください。
 
+## GitHub Actions CI/CD
+
+- CIは `main` 向けの pull request、`main` への push、および手動実行で動きます。Node.js 24.22.0 / Bun 1.4.4 を使い、依存関係の凍結インストール、Void型生成、型検査、lint、Prettier確認、ユニット・サーバー統合テスト、ChromiumによるPlaywright（デスクトップ／モバイル両プロジェクト）、ビルドを検証します。
+- 本番デプロイは自動ではありません。Actionsから `main` を選んで `workflow_dispatch` を実行した場合に限り、全CI成功後に production Environment を使って実行します。実行前に `https://reader.rrrr.dev/api/books` でAccessセッションを確認し、HTTP 200以外（期限切れ・未認証を含む）なら公開処理を開始しません。
+- GitHubリポジトリの Settings → Environments で `production` を作成し、Deployment branches and tags を `main` のみに制限してください。必要なら required reviewers も設定してください。ワークフローからEnvironmentが自動作成されても、保護ルールやsecretsは設定されません。デプロイ前に設定を完了してください。
+- `production` Environment に次の2つのActions secretsを登録します。
+  - `CLOUDFLARE_API_TOKEN`: VoidからWorkerをデプロイするCloudflare APIトークン。対象アカウントのWorkers Scripts Editと、利用リソースの読み取り権限が必要です。別途明示的にプロビジョニングする製品がある場合に限り、その製品の編集権限を追加してください。不要な広範権限は付与しません。
+  - `CF_ACCESS_TOKEN`: 所有者自身のメール認証で得る、短時間有効なCloudflare Accessアプリセッション。現行ポリシーでは有効期間は24時間です。デプロイ時点で期限内のトークンが必要です。事前確認で欠落・期限切れを検出した場合は、Voidの公開コマンドを実行しません。
+- 許可された所有者として通常の端末でAccessログインし、短期トークンを秘密値のまま標準入力で登録します（コマンド出力やログへ表示しません）。有効期限後は同じ手順で更新します。
+
+  ```bash
+  cloudflared access token --app=https://reader.rrrr.dev | gh secret set CF_ACCESS_TOKEN --env production
+  ```
+
+  管理用 `CLOUDFLARE_API_TOKEN` はCloudflareで別途作成し、同じEnvironmentのsecret設定画面から登録してください。Cloudflare管理APIの認証と、アプリへのAccess認証は別物です。Accessポリシーを広げたり、サービス認証を追加したりしてCIを通さないでください。
+
 ## 公開リポジトリでの取り扱い
 
 本の実データ、実際の `library.json`、`.env` / `.dev.vars`、秘密鍵はコミットしません。Cloudflare のアカウントID、Access AUD、ドメイン、許可メールアドレスは運用設定として含まれますが、APIトークンや秘密鍵ではありません。ローカルの環境設定と書庫の作業ファイルは `.gitignore` で除外しています。
