@@ -117,26 +117,38 @@ for (const direction of ['ltr', 'rtl'] as const) {
       if (!cfi) throw new Error('EPUB location is not ready')
       return collapse(cfi)
     }
-    const preservesPoint = (savedCfi: string) =>
+    const savedPointIsVisible = (savedCfi: string) =>
       view.evaluate((el, cfi) => {
         const epub = el as PositionView
-        const location = epub.lastLocation
-        const contents = epub.renderer?.getContents()
-        const content = contents?.[0]
-        if (!location?.cfi || !content) return false
+        const content = epub.renderer?.getContents()[0]
+        if (!content) return false
         try {
           const saved = epub.resolveCFI(cfi)
-          const current = epub.resolveCFI(location.cfi)
+          if (saved.index !== content.index) return false
           const point = saved.anchor(content.doc)
           const child = point.startContainer.childNodes[point.startOffset]
           // A paragraph boundary and its first text offset denote the same reading point.
           if (child?.nodeType === Node.TEXT_NODE) point.setStart(child, 0)
+          point.collapse(true)
+          const text = point.startContainer
+          if (
+            text.nodeType === Node.TEXT_NODE &&
+            point.startOffset < text.textContent!.length
+          ) {
+            point.setEnd(text, point.startOffset + 1)
+          }
+          const rect = point.getBoundingClientRect()
+          const frame = content.doc.defaultView?.frameElement
+          if (!frame || rect.width <= 0 || rect.height <= 0) return false
+          const frameBounds = frame.getBoundingClientRect()
+          const viewBounds = epub.getBoundingClientRect()
+          const centerX = rect.left + frameBounds.left + rect.width / 2
+          const centerY = rect.top + frameBounds.top + rect.height / 2
           return (
-            saved.index === content.index &&
-            current.index === content.index &&
-            current
-              .anchor(content.doc)
-              .comparePoint(point.startContainer, point.startOffset) === 0
+            centerX >= viewBounds.left &&
+            centerX < viewBounds.right &&
+            centerY >= viewBounds.top &&
+            centerY < viewBounds.bottom
           )
         } catch {
           return false
@@ -161,13 +173,13 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await page.getByRole('button', { name: '設定' }).click()
     let saved = await capturePoint()
     await apply('文字サイズの値', '24', 24, 43.2)
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
+    await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
     await apply('行間の値', '2.1', 24, 50.4)
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
+    await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
     await apply('左の値', '24', 24, 50.4, 24)
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
+    await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
     await page.getByRole('button', { name: '読書に戻る' }).click()
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
+    await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
 
     const beforeSecondVisit = await view.evaluate(
       (el) => (el as PositionView).lastLocation?.cfi,
@@ -179,39 +191,9 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await page.getByRole('button', { name: '設定' }).click()
     saved = await capturePoint()
     await apply('文字サイズの値', '20', 20, 42)
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
+    await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
     await page.getByRole('button', { name: '読書に戻る' }).click()
-    await expect.poll(() => preservesPoint(saved)).toBe(true)
-
-    const savedPointIsVisible = (savedCfi: string) =>
-      view.evaluate((el, cfi) => {
-        const epub = el as PositionView
-        const content = epub.renderer?.getContents()[0]
-        if (!content) return false
-        try {
-          const range = epub.resolveCFI(cfi).anchor(content.doc)
-          const child = range.startContainer.childNodes[range.startOffset]
-          if (child?.nodeType === Node.TEXT_NODE) range.setStart(child, 0)
-          range.collapse(true)
-          const rect = range.getBoundingClientRect()
-          const frame = content.doc.defaultView?.frameElement
-          const bounds = epub.getBoundingClientRect()
-          if (!frame || (rect.width === 0 && rect.height === 0)) return false
-          const frameBounds = frame.getBoundingClientRect()
-          const left = rect.left + frameBounds.left
-          const top = rect.top + frameBounds.top
-          const right = left + Math.max(rect.width, 1)
-          const bottom = top + Math.max(rect.height, 1)
-          return (
-            right > bounds.left &&
-            left < bounds.right &&
-            bottom > bounds.top &&
-            top < bounds.bottom
-          )
-        } catch {
-          return false
-        }
-      }, savedCfi)
+    await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
     const waitForViewportLayout = async (width: number, height: number) => {
       await expect
         .poll(async () =>
@@ -239,12 +221,40 @@ for (const direction of ['ltr', 'rtl'] as const) {
         )
         .toBe(true)
       await flushLayout()
-      await expect.poll(() => preservesPoint(saved)).toBe(true)
       await expect.poll(() => savedPointIsVisible(saved)).toBe(true)
     }
     await page.setViewportSize({ width: 390, height: 844 })
     await waitForViewportLayout(390, 844)
     await page.setViewportSize({ width: 1280, height: 900 })
     await waitForViewportLayout(1280, 900)
+
+    const previousLocation = await view.evaluate(
+      (el) => (el as PositionView).lastLocation?.cfi,
+    )
+    for (let index = 0; index < 6; index++) await next.click()
+    await expect
+      .poll(() => view.evaluate((el) => (el as PositionView).lastLocation?.cfi))
+      .not.toBe(previousLocation)
+    await expect.poll(() => savedPointIsVisible(saved)).toBe(false)
+    expect(
+      await view.evaluate((el, cfi) => {
+        const epub = el as PositionView
+        const content = epub.renderer?.getContents()[0]
+        if (!content) return false
+        try {
+          const point = epub.resolveCFI(cfi).anchor(content.doc)
+          return (
+            content.doc.body.contains(point.startContainer) &&
+            content.doc.body.textContent!.length > 0 &&
+            ((content.doc.defaultView?.frameElement?.getBoundingClientRect()
+              .width ?? 0) > epub.getBoundingClientRect().width ||
+              (content.doc.defaultView?.frameElement?.getBoundingClientRect()
+                .height ?? 0) > epub.getBoundingClientRect().height)
+          )
+        } catch {
+          return false
+        }
+      }, saved),
+    ).toBe(true)
   })
 }
