@@ -56,11 +56,12 @@ Cloudflare管理用のログイン（`bunx void cloudflare login`）と、アプ
 ## GitHub Actions CI/CD
 
 - CIは `main` 向けの pull request、`main` への push、および手動実行で動きます。Node.js 24.22.0 / Bun 1.4.4 を使い、依存関係の凍結インストール、Void型生成、型検査、lint、Prettier確認、ユニット・サーバー統合テスト、ChromiumによるPlaywright（デスクトップ／モバイル両プロジェクト）、ビルドを検証します。
-- 本番デプロイは自動ではありません。Actionsから `main` を選んで `workflow_dispatch` を実行した場合に限り、全CI成功後に production Environment を使って実行します。実行前に `https://reader.rrrr.dev/api/books` でAccessセッションを確認し、HTTP 200以外（期限切れ・未認証を含む）なら公開処理を開始しません。
+- `main` へのpush（PRのマージを含む）で、全CI成功後に production Environment を使って本番へ自動デプロイします。Actionsから `main` を選んで `workflow_dispatch` を手動実行することもできます。PRや他ブランチではデプロイしません。実行前に `https://reader.rrrr.dev/api/books` でAccessセッションを確認し、HTTP 200以外（期限切れ・未認証を含む）なら公開処理を開始しません。
+- 本番配信は直列化し、後続のpushで進行中の配信をキャンセルしません。古いPRの検証だけをキャンセルします。
 - GitHubリポジトリの Settings → Environments で `production` を作成し、Deployment branches and tags を `main` のみに制限してください。必要なら required reviewers も設定してください。ワークフローからEnvironmentが自動作成されても、保護ルールやsecretsは設定されません。デプロイ前に設定を完了してください。
 - `production` Environment に次の2つのActions secretsを登録します。
   - `CLOUDFLARE_API_TOKEN`: VoidからWorkerをデプロイするCloudflare APIトークン。対象アカウントのWorkers Scripts Editと、利用リソースの読み取り権限が必要です。別途明示的にプロビジョニングする製品がある場合に限り、その製品の編集権限を追加してください。不要な広範権限は付与しません。
-  - `CF_ACCESS_TOKEN`: 所有者自身のメール認証で得る、短時間有効なCloudflare Accessアプリセッション。現行ポリシーでは有効期間は24時間です。デプロイ時点で期限内のトークンが必要です。事前確認で欠落・期限切れを検出した場合は、Voidの公開コマンドを実行しません。
+  - `CF_ACCESS_TOKEN`: 所有者自身のメール認証で得る、短時間有効なCloudflare Accessアプリセッション。現行ポリシーでは有効期間は24時間です。自動配信でも期限内のトークンが必要です。事前確認で欠落・期限切れを検出した場合は、Voidの公開コマンドを実行しません。更新後に `main` の手動実行で再配信してください。
 - 許可された所有者として通常の端末でAccessログインし、短期トークンを秘密値のまま標準入力で登録します（コマンド出力やログへ表示しません）。有効期限後は同じ手順で更新します。
 
   ```bash
