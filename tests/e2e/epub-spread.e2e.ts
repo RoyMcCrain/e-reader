@@ -108,6 +108,24 @@ const makeImageOnlyEpub = async () => {
   return new Uint8Array(await (await writer.close()).arrayBuffer())
 }
 
+const makeLazyEpub = async () => {
+  const writer = new ZipWriter(new BlobWriter())
+  const files = {
+    mimetype: 'application/epub+zip',
+    'META-INF/container.xml':
+      '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+    'book.opf':
+      '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">lazy</dc:identifier><dc:title>Lazy</dc:title><dc:language>ja</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="image" href="image.svg" media-type="image/svg+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>',
+    'chapter.xhtml':
+      '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Lazy image</title></head><body><p>Opening works.</p><div style="height:30000px"></div><img loading="lazy" width="300" height="200" src="image.svg" alt="Lazy image"/></body></html>',
+    'image.svg':
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><rect width="300" height="200" fill="#26c"/></svg>',
+  }
+  for (const [name, content] of Object.entries(files))
+    await writer.add(name, new TextReader(content))
+  return new Uint8Array(await (await writer.close()).arrayBuffer())
+}
+
 const makeFixedEpub = async () => {
   const writer = new ZipWriter(new BlobWriter())
   const pages = ['P1', 'P2', 'P3']
@@ -127,6 +145,168 @@ const makeFixedEpub = async () => {
     await writer.add(name, new TextReader(content))
   return new Uint8Array(await (await writer.close()).arrayBuffer())
 }
+
+const imageSpreadState = async (page: import('@playwright/test').Page) =>
+  page.evaluate(() =>
+    ['primary', 'secondary'].map((name) => {
+      const view = document.querySelector(
+        `[data-reader-page="${name}"] foliate-view`,
+      ) as
+        | (HTMLElement & { renderer?: { getContents(): { index: number }[] } })
+        | null
+      return view?.renderer?.getContents()[0]?.index
+    }),
+  )
+
+const imageSpreadPixels = async (page: import('@playwright/test').Page) =>
+  Promise.all(
+    ['primary', 'secondary'].map(async (name) => {
+      const image = await page
+        .locator(`[data-reader-page="${name}"] foliate-view`)
+        .screenshot()
+      return page.evaluate(async (encoded) => {
+        const bitmap = new Image()
+        bitmap.src = `data:image/png;base64,${encoded}`
+        await bitmap.decode()
+        const canvas = document.createElement('canvas')
+        canvas.width = canvas.height = 10
+        const context = canvas.getContext('2d')!
+        context.drawImage(bitmap, 0, 0, 10, 10)
+        return [...context.getImageData(5, 5, 1, 1).data].join(',')
+      }, image.toString('base64'))
+    }),
+  )
+
+for (const scale of [1, 1.25, 1.5, 1.75, 2.625]) {
+  test(`native image spread scale ${scale} @native-scale-${String(scale).replace('.', '')}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        'shiori.reader.settings.v1',
+        JSON.stringify({ spread: 'double' }),
+      ),
+    )
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await page.locator('input[type=file]').setInputFiles({
+      name: 'native-image.epub',
+      mimeType: 'application/epub+zip',
+      buffer: Buffer.from(await makeImageOnlyEpub()),
+    })
+    const next = page.getByRole('button', { name: '次へ' })
+    const prev = page.getByRole('button', { name: '前へ' })
+    const colors = ['221,34,17,255', '34,102,204,255']
+    const expectSpread = async (indices: number[]) => {
+      await expect.poll(() => imageSpreadState(page)).toEqual(indices)
+      await expect
+        .poll(() => imageSpreadPixels(page))
+        .toEqual(
+          indices[0] === 0 ? colors : ['34,170,102,255', '170,34,102,255'],
+        )
+    }
+    await expectSpread([0, 1])
+    await next.click()
+    await expectSpread([2, 3])
+    await expect(next).toBeDisabled()
+    await expect.poll(() => imageSpreadState(page)).toEqual([2, 3])
+    await prev.click()
+    await expectSpread([0, 1])
+  })
+}
+
+test('native resize keeps the RTL lead across auto-spread boundaries @native', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({
+        spread: 'auto',
+        marginLeft: 31,
+        marginRight: 23,
+        gutter: 17,
+      }),
+    ),
+  )
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'native-resize.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeImageOnlyEpub()),
+  })
+  const session = await page.context().newCDPSession(page)
+  const { windowId } = await session.send('Browser.getWindowForTarget')
+  const initial = await session.send('Browser.getWindowBounds', { windowId })
+  // Native bounds and innerWidth round differently at fractional scales.
+  const viewport = () =>
+    page.evaluate(() =>
+      Math.floor(window.visualViewport?.width ?? window.innerWidth),
+    )
+  const setViewportWidth = async (width: number) => {
+    const current = await session.send('Browser.getWindowBounds', { windowId })
+    const inset = (current.bounds.width ?? 0) - (await viewport())
+    await session.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: {
+        width: width + inset,
+        height: current.bounds.height,
+        windowState: 'normal',
+      },
+    })
+    await expect.poll(viewport).toBe(width)
+  }
+  const spread = page.locator('[data-reader-spread]')
+  const indices = () => imageSpreadState(page)
+  await setViewportWidth(773)
+  await expect
+    .poll(() =>
+      spread.evaluate((element) =>
+        Math.floor(element.getBoundingClientRect().width),
+      ),
+    )
+    .toBe(719)
+  await expect(page.locator('[data-reader-page="secondary"]')).toHaveCount(0)
+  await expect.poll(indices).toEqual([0, undefined])
+  await setViewportWidth(774)
+  await expect
+    .poll(() =>
+      spread.evaluate((element) =>
+        Math.floor(element.getBoundingClientRect().width),
+      ),
+    )
+    .toBe(720)
+  await expect(page.locator('[data-reader-page="secondary"]')).toBeVisible()
+  await expect.poll(indices).toEqual([0, 1])
+  await expect
+    .poll(() => imageSpreadPixels(page))
+    .toEqual(['221,34,17,255', '34,102,204,255'])
+  const [primaryBox, secondaryBox] = await Promise.all([
+    page.locator('[data-reader-page="primary"]').boundingBox(),
+    page.locator('[data-reader-page="secondary"]').boundingBox(),
+  ])
+  expect(primaryBox!.x).toBeGreaterThan(secondaryBox!.x)
+  expect(primaryBox!.x - secondaryBox!.x - secondaryBox!.width).toBeCloseTo(
+    17,
+    3,
+  )
+  expect(primaryBox!.y).toBe(secondaryBox!.y)
+  await setViewportWidth(775)
+  await expect
+    .poll(() =>
+      spread.evaluate((element) =>
+        Math.floor(element.getBoundingClientRect().width),
+      ),
+    )
+    .toBe(721)
+  await expect.poll(indices).toEqual([0, 1])
+  await session.send('Browser.setWindowBounds', {
+    windowId,
+    bounds: initial.bounds,
+  })
+  await session.detach()
+})
 
 test('image-only RTL sections occupy distinct consecutive spread pages', async ({
   page,
@@ -219,6 +399,33 @@ test('image-only RTL sections occupy distinct consecutive spread pages', async (
   await page.setViewportSize({ width: 1495, height: 1188 })
   await expect.poll(primaryWidth).toBe(width)
   await expect.poll(sectionIndices).toEqual([2, 3])
+})
+
+test('lazy EPUB images do not block opening or page navigation @lazy-native', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({ spread: 'double' }),
+    ),
+  )
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'lazy.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeLazyEpub()),
+  })
+  const next = page.getByRole('button', { name: '次へ' })
+  const primary = page.locator('[data-reader-page="primary"] foliate-view')
+  await expect(page.getByText('本を開いています…')).toHaveCount(0, {
+    timeout: 15_000,
+  })
+  await expect(next).toBeEnabled()
+  const before = await rendererPage(primary)
+  await next.click()
+  await expect.poll(() => rendererPage(primary)).toBe((before ?? 0) + 2)
 })
 
 test('fixed-layout EPUB navigates real pages and clamps the final spread', async ({
