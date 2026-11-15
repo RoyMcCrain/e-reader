@@ -1,0 +1,72 @@
+.library {
+  margin: 0 auto 28px;
+  padding: 18px;
+  border: 1px solid #e1dfd5;
+  border-radius: 16px;
+  background: #ffffffa1;
+  text-align: left;
+}
+.library h2 {
+  margin: 0 0 12px;
+  color: #52694e;
+  font-size: 15px;
+}
+.library p {
+  margin: 8px 0;
+  color: #676a63;
+  font-size: 13px;
+}
+.library a {
+  color: #52694e;
+}
+.books {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.books li {
+  min-width: 0;
+}
+.book {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 13px;
+  border: 1px solid #e5e4dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #282c25;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.book:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.metadata {
+  color: #777a72;
+  font-size: 11px;
+}
+.library button:not(.book) {
+  padding: 7px 12px;
+  border: 1px solid #aab4a4;
+  border-radius: 8px;
+  background: transparent;
+  color: #52694e;
+  font: inherit;
+  cursor: pointer;
+}
+.error {
+  color: #a6372c !important;
+}

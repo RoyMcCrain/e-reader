@@ -1,0 +1,240 @@
+import { useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
+import { useReaderApp } from '../state/ReaderProvider'
+import type { CloudBook, LibraryResponse } from './types'
+import styles from './Library.module.css'
+
+interface LibraryProps {
+  cancelPending: RefObject<(() => void) | null>
+}
+
+const formatSize = (size: number) =>
+  size < 1024 * 1024
+    ? `${Math.max(1, Math.round(size / 1024))} KB`
+    : `${(size / (1024 * 1024)).toFixed(1)} MB`
+const validId = (id: unknown) =>
+  typeof id === 'string' && /^[a-f\d]{64}$/i.test(id)
+const validFormat = (format: unknown) => format === 'epub' || format === 'zip'
+const validSize = (size: unknown) =>
+  typeof size === 'number' && Number.isFinite(size) && size >= 0
+const validBookDetails = (book: CloudBook) =>
+  validId(book.id) &&
+  typeof book.name === 'string' &&
+  validFormat(book.format) &&
+  validSize(book.size)
+const validBook = (value: unknown): value is CloudBook =>
+  Boolean(
+    value && typeof value === 'object' && validBookDetails(value as CloudBook),
+  )
+
+const getBooksError = (
+  response: Response,
+): 'auth' | 'offline' | 'unavailable' | '' => {
+  if (response.status === 401 || response.status === 403) return 'auth'
+  if (response.status === 503) return 'unavailable'
+  return response.ok ? '' : 'offline'
+}
+
+const applyBooksResponse = async (
+  response: Response,
+  setBooks: (books: CloudBook[]) => void,
+  setListError: (error: 'auth' | 'offline' | 'unavailable' | '') => void,
+  controller: AbortController,
+) => {
+  if (controller.signal.aborted) return
+  const error = getBooksError(response)
+  if (error) {
+    await response.body?.cancel()
+    if (!controller.signal.aborted) setListError(error)
+    return
+  }
+  const result: LibraryResponse = await response.json()
+  if (!controller.signal.aborted)
+    setBooks(Array.isArray(result.books) ? result.books.filter(validBook) : [])
+}
+
+const loadBooks = async (
+  setBooks: (books: CloudBook[]) => void,
+  setListError: (error: 'auth' | 'offline' | 'unavailable' | '') => void,
+  setLoading: (loading: boolean) => void,
+  controller: AbortController,
+) => {
+  setLoading(true)
+  setListError('')
+  try {
+    const response = await fetch('/api/books', {
+      credentials: 'same-origin',
+      signal: controller.signal,
+    })
+    await applyBooksResponse(response, setBooks, setListError, controller)
+  } catch {
+    if (!controller.signal.aborted) setListError('offline')
+  } finally {
+    if (!controller.signal.aborted) setLoading(false)
+  }
+}
+
+const downloadBook = async (
+  book: CloudBook,
+  controller: AbortController,
+  setFile: (file: File) => void,
+) => {
+  const response = await fetch(`/api/books/${encodeURIComponent(book.id)}`, {
+    credentials: 'same-origin',
+    signal: controller.signal,
+  })
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+  const expectedType =
+    book.format === 'epub' ? 'application/epub+zip' : 'application/zip'
+  if (!response.ok || !contentType.includes(expectedType)) {
+    await response.body?.cancel()
+    throw new Error('download')
+  }
+  const blob = await response.blob()
+  if (!controller.signal.aborted)
+    setFile(new File([blob], book.name, { type: expectedType }))
+}
+
+interface LibraryStateProps {
+  loading: boolean
+  listError: 'auth' | 'offline' | 'unavailable' | ''
+  books: CloudBook[]
+  retry: () => void
+}
+
+const LibraryState = ({
+  loading,
+  listError,
+  books,
+  retry,
+}: LibraryStateProps) => {
+  if (loading) return <p>クラウドの本を確認しています…</p>
+  switch (listError) {
+    case 'auth':
+      return (
+        <p>
+          クラウドの本を読むにはログインが必要です。{' '}
+          <a href="https://reader.rrrr.dev/">ログイン</a>
+        </p>
+      )
+    case 'offline':
+      return <p>クラウドの本を確認できませんでした。</p>
+    case 'unavailable':
+      return (
+        <div>
+          <p>クラウドの本は現在利用できません。</p>
+          <button onClick={retry}>再試行</button>
+        </div>
+      )
+    default:
+      return books.length === 0 ? <p>クラウドに本はありません。</p> : null
+  }
+}
+
+interface BookListProps {
+  books: CloudBook[]
+  busyId: string
+  openBook: (book: CloudBook) => void
+}
+
+const BookList = ({ books, busyId, openBook }: BookListProps) =>
+  books.length > 0 ? (
+    <ul className={styles.books}>
+      {books.map((book) => (
+        <li key={book.id}>
+          <button
+            className={styles.book}
+            aria-label={`${book.name}、${book.format.toUpperCase()}、${formatSize(book.size)}`}
+            disabled={Boolean(busyId)}
+            onClick={() => openBook(book)}
+          >
+            <span className={styles.name}>{book.name}</span>
+            <span className={styles.metadata}>
+              {book.format.toUpperCase()} · {formatSize(book.size)}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  ) : null
+
+interface DownloadActions {
+  setBusyId: (id: string) => void
+  setDownloadError: (message: string) => void
+  setFile: (file: File) => void
+}
+
+const openCloudBook = async (
+  book: CloudBook,
+  actions: DownloadActions,
+  cancelPending: LibraryProps['cancelPending'],
+) => {
+  const controller = new AbortController()
+  cancelPending.current = () => controller.abort()
+  actions.setBusyId(book.id)
+  actions.setDownloadError('')
+  try {
+    await downloadBook(book, controller, actions.setFile)
+  } catch {
+    if (!controller.signal.aborted)
+      actions.setDownloadError(
+        '本をダウンロードできませんでした。通信状況を確認して、もう一度お試しください。',
+      )
+  } finally {
+    if (!controller.signal.aborted) actions.setBusyId('')
+  }
+}
+
+export const Library = ({ cancelPending }: LibraryProps) => {
+  const { setFile } = useReaderApp()
+  const [books, setBooks] = useState<CloudBook[]>([])
+  const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState<
+    'auth' | 'offline' | 'unavailable' | ''
+  >('')
+  const [busyId, setBusyId] = useState('')
+  const [downloadError, setDownloadError] = useState('')
+  const listController = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    listController.current = controller
+    void loadBooks(setBooks, setListError, setLoading, controller)
+    return () => {
+      listController.current?.abort()
+      cancelPending.current?.()
+      cancelPending.current = null
+    }
+  }, [cancelPending])
+
+  const actions = { setBusyId, setDownloadError, setFile }
+  const openBook = (book: CloudBook) => {
+    if (!busyId) void openCloudBook(book, actions, cancelPending)
+  }
+
+  return (
+    <section className={styles.library} aria-labelledby="library-heading">
+      <h2 id="library-heading">クラウドの本</h2>
+      <LibraryState
+        loading={loading}
+        listError={listError}
+        books={books}
+        retry={() => {
+          listController.current?.abort()
+          const controller = new AbortController()
+          listController.current = controller
+          void loadBooks(setBooks, setListError, setLoading, controller)
+        }}
+      />
+      {!loading && !listError && (
+        <BookList books={books} busyId={busyId} openBook={openBook} />
+      )}
+      {busyId && <p role="status">本をダウンロードしています…</p>}
+      {downloadError && (
+        <p role="alert" className={styles.error}>
+          {downloadError}
+        </p>
+      )}
+    </section>
+  )
+}
