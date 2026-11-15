@@ -237,8 +237,13 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
         'display:grid;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;'
       options.host.append(surface)
     }
+    // Foliate rounds scroll extents, so fractional page widths can repeat a page.
+    const pageWidth = Math.max(
+      0,
+      Math.floor((surface.getBoundingClientRect().width - settings.gutter) / 2),
+    )
     surface.style.gridTemplateColumns = physicalDouble
-      ? 'repeat(2,minmax(0,1fr))'
+      ? `repeat(2,${pageWidth}px)`
       : 'minmax(0,1fr)'
     surface.style.gap = `${settings.gutter}px`
     surface.style.direction = book.dir === 'rtl' ? 'rtl' : 'ltr'

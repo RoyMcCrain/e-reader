@@ -73,6 +73,41 @@ const makeShortEpub = async (direction: 'ltr' | 'rtl') => {
   return new Uint8Array(await (await writer.close()).arrayBuffer())
 }
 
+const makeImageOnlyEpub = async () => {
+  const writer = new ZipWriter(new BlobWriter())
+  const sections = ['cover', 'frontispiece', 'chapter', 'chapter2']
+  const manifest = sections
+    .map(
+      (name, index) =>
+        `<item id="s${index}" href="${name}.xhtml" media-type="application/xhtml+xml"/><item id="a${index}" href="${name}.svg" media-type="image/svg+xml"/>`,
+    )
+    .join('')
+  const files: Record<string, string> = {
+    mimetype: 'application/epub+zip',
+    'META-INF/container.xml':
+      '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+    'book.opf': `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id" dir="rtl"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">image-only</dc:identifier><dc:title>Image only</dc:title><dc:language>en</dc:language></metadata><manifest>${manifest}</manifest><spine page-progression-direction="rtl">${sections.map((_, index) => `<itemref idref="s${index}"/>`).join('')}</spine></package>`,
+    ...Object.fromEntries(
+      sections.map((name) => [
+        `${name}.xhtml`,
+        `<html xmlns="http://www.w3.org/1999/xhtml"><head><style>html,body,div{width:100%;height:100%;margin:0}svg{display:block}</style></head><body><div class="main"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 1443 2048" width="100%" height="100%"><image xlink:href="${name}.svg" width="1443" height="2048"/></svg></div></body></html>`,
+      ]),
+    ),
+    ...Object.fromEntries(
+      sections.map(
+        (name, index) =>
+          [
+            `${name}.svg`,
+            `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 1000"><rect width="700" height="1000" fill="${['#d21', '#26c', '#2a6', '#a26'][index]}"/></svg>`,
+          ] as const,
+      ),
+    ),
+  }
+  for (const [name, content] of Object.entries(files))
+    await writer.add(name, new TextReader(content))
+  return new Uint8Array(await (await writer.close()).arrayBuffer())
+}
+
 const makeFixedEpub = async () => {
   const writer = new ZipWriter(new BlobWriter())
   const pages = ['P1', 'P2', 'P3']
@@ -92,6 +127,99 @@ const makeFixedEpub = async () => {
     await writer.add(name, new TextReader(content))
   return new Uint8Array(await (await writer.close()).arrayBuffer())
 }
+
+test('image-only RTL sections occupy distinct consecutive spread pages', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1495, height: 1188 })
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({ spread: 'double' }),
+    ),
+  )
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'image-only.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeImageOnlyEpub()),
+  })
+  const visibleAsset = (name: string) =>
+    page
+      .locator(`[data-reader-page="${name}"] foliate-view`)
+      .evaluate(async (element) => {
+        const view = element as HTMLElement & {
+          renderer?: {
+            getContents(): { index: number; doc: Document }[]
+          }
+        }
+        const content = view.renderer?.getContents()[0]
+        return {
+          index: content?.index,
+          asset: content?.doc
+            .querySelector('image')
+            ?.getAttributeNS('http://www.w3.org/1999/xlink', 'href'),
+        }
+      })
+  const expectedFirstSpread = [
+    { index: 0, asset: expect.stringMatching(/^blob:/) },
+    { index: 1, asset: expect.stringMatching(/^blob:/) },
+  ]
+  await expect.soft
+    .poll(async () => [
+      await visibleAsset('primary'),
+      await visibleAsset('secondary'),
+    ])
+    .toMatchObject(expectedFirstSpread)
+  const visiblePixel = async (name: string) => {
+    const screenshot = await page
+      .locator(`[data-reader-page="${name}"] foliate-view`)
+      .screenshot()
+    return page.evaluate(async (encoded) => {
+      const image = new Image()
+      image.src = `data:image/png;base64,${encoded}`
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 10
+      const context = canvas.getContext('2d')!
+      context.drawImage(image, 0, 0, 10, 10)
+      return [...context.getImageData(5, 5, 1, 1).data].join(',')
+    }, screenshot.toString('base64'))
+  }
+  await expect.soft
+    .poll(async () => [
+      await visiblePixel('primary'),
+      await visiblePixel('secondary'),
+    ])
+    .toEqual(['221,34,17,255', '34,102,204,255'])
+  const sectionIndices = () =>
+    page.evaluate(() =>
+      ['primary', 'secondary'].map((name) => {
+        const view = document.querySelector(
+          `[data-reader-page="${name}"] foliate-view`,
+        ) as
+          | (HTMLElement & {
+              renderer?: { getContents(): { index: number }[] }
+            })
+          | null
+        return view?.renderer?.getContents()[0]?.index
+      }),
+    )
+  await page.getByRole('button', { name: '次へ' }).click()
+  await expect.poll(sectionIndices).toEqual([2, 3])
+  const primaryWidth = () =>
+    page
+      .locator('[data-reader-page="primary"] foliate-view')
+      .evaluate((element) => element.getBoundingClientRect().width)
+  const width = await primaryWidth()
+  await page.setViewportSize({ width: 1496, height: 1188 })
+  await expect.poll(primaryWidth).toBeGreaterThan(width)
+  await expect.poll(sectionIndices).toEqual([2, 3])
+  await page.setViewportSize({ width: 1495, height: 1188 })
+  await expect.poll(primaryWidth).toBe(width)
+  await expect.poll(sectionIndices).toEqual([2, 3])
+})
 
 test('fixed-layout EPUB navigates real pages and clamps the final spread', async ({
   page,
