@@ -1,4 +1,4 @@
-import type { LibraryResponse, CloudBook } from '../library/types'
+import type { LibraryResponse, CloudBook } from '../lib/library/types'
 import { checkAccess, type AccessEnv } from './access.ts'
 
 interface StoredObject {

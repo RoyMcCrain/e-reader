@@ -24,7 +24,7 @@ test('aborting during primary open closes a renderer allocated by late completio
   await page.waitForLoadState('networkidle')
   const fixture = [...(await makeEpub())]
   await page.evaluate(async (bytes) => {
-    const readerModule = '/src/reader/epub.ts'
+    const readerModule = '/src/lib/reader/epub.ts'
 
     const { openEpub } = await import(readerModule)
     const host = document.createElement('div')
@@ -195,7 +195,7 @@ test('closing during secondary open closes the renderer allocated by late comple
   await page.waitForLoadState('networkidle')
   const fixture = [...(await makeEpub())]
   await page.evaluate(async (bytes) => {
-    const readerModule = '/src/reader/epub.ts'
+    const readerModule = '/src/lib/reader/epub.ts'
 
     const { openEpub } = await import(readerModule)
     const host = document.createElement('div')

@@ -6,9 +6,12 @@ import {
   useLocation,
   useNavigate,
 } from '@tanstack/react-router'
-import { Reader } from '../reader/Reader'
-import { ReaderProvider, useReaderApp } from '../state/ReaderProvider'
-import shellStyles from '../state/ReaderShell.module.css'
+import { Reader } from '../components/reader/Reader'
+import {
+  ReaderProvider,
+  useReaderApp,
+} from '../components/providers/ReaderProvider'
+import shellStyles from './__root.module.css'
 import './styles.css'
 
 const AppShell = () => {

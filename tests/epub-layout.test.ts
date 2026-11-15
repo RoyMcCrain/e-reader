@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { awaitWithAbort } from '../src/reader/epub-layout'
+import { awaitWithAbort } from '../src/lib/reader/epub-layout'
 
 describe('awaitWithAbort', () => {
   test('abort前に拒否されたpromiseを観測しAbortErrorを返す', async () => {

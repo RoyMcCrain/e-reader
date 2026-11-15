@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test'
 const installInput = async (page: import('@playwright/test').Page) => {
   await page.goto('/')
   return page.evaluate(async () => {
-    const { bindHostInput }: typeof import('../../src/reader/input') =
-      await new Function('return import("/src/reader/input.ts")')()
+    const { bindHostInput }: typeof import('../../src/lib/reader/input') =
+      await new Function('return import("/src/lib/reader/input.ts")')()
     const host = document.createElement('main')
     const content = document.createElement('div')
     content.textContent = 'Selectable reader content'

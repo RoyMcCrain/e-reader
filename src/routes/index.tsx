@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
-import { Library } from '../library/Library'
-import { useReaderApp } from '../state/ReaderProvider'
+import { Library } from '../components/library/Library'
+import { useReaderApp } from '../components/providers/ReaderProvider'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({ component: Home })

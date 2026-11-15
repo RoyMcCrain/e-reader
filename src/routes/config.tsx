@@ -1,7 +1,10 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { useReaderApp } from '../state/ReaderProvider'
-import { DEFAULT_SETTINGS, type ReaderSettings } from '../reader/preferences'
+import { useReaderApp } from '../components/providers/ReaderProvider'
+import {
+  DEFAULT_SETTINGS,
+  type ReaderSettings,
+} from '../lib/reader/preferences'
 import styles from './config.module.css'
 
 export const Route = createFileRoute('/config')({ component: Config })

@@ -3,7 +3,7 @@ import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   SETTINGS_KEY,
-} from '../src/reader/preferences'
+} from '../src/lib/reader/preferences'
 
 describe('reader settings normalization', () => {
   test('clamps finite numbers to supported limits and preserves enum choices', () => {

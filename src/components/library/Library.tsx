@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { useReaderApp } from '../state/ReaderProvider'
-import type { CloudBook, LibraryResponse } from './types'
+import { useReaderApp } from '../providers/ReaderProvider'
+import type { CloudBook, LibraryResponse } from '../../lib/library/types'
 import styles from './Library.module.css'
 
 interface LibraryProps {
