@@ -1,5 +1,5 @@
 import type { TocItem } from 'foliate-js/epub.js'
-import type { ReaderSettings } from './preferences'
+import type { ReaderSettings } from '#lib/reader/preferences'
 
 export interface ReaderLocation {
   progress: number

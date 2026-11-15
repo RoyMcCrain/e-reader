@@ -8,12 +8,16 @@ import {
 import type { EpubBook, TocItem } from 'foliate-js/epub.js'
 import { collapse } from 'foliate-js/epubcfi.js'
 import type { FoliateViewElement, FoliateRenderer } from 'foliate-js/view.js'
-import type { EpubOptions, EpubSession, ReaderLocation } from './epub-types'
-import type { ReaderSettings } from './preferences'
-import { secureDocument } from './security'
-import { bindEpubInput, bindHostInput } from './input'
-import { awaitOwned, awaitWithAbort } from './epub-layout'
-import { collectZipEntries } from './zip-entries'
+import type {
+  EpubOptions,
+  EpubSession,
+  ReaderLocation,
+} from '#lib/reader/epub-types'
+import type { ReaderSettings } from '#lib/reader/preferences'
+import { secureDocument } from '#lib/reader/security'
+import { bindEpubInput, bindHostInput } from '#lib/reader/input'
+import { awaitOwned, awaitWithAbort } from '#lib/reader/epub-layout'
+import { collectZipEntries } from '#lib/reader/zip-entries'
 
 type Book = EpubBook
 type Pane = {

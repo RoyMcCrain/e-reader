@@ -6,13 +6,13 @@ import {
   useLocation,
   useNavigate,
 } from '@tanstack/react-router'
-import { Reader } from '../components/reader/Reader'
+import { Reader } from '#components/reader/Reader'
 import {
   ReaderProvider,
   useReaderApp,
-} from '../components/providers/ReaderProvider'
-import shellStyles from './__root.module.css'
-import './styles.css'
+} from '#components/providers/ReaderProvider'
+import shellStyles from '#routes/__root.module.css'
+import '#routes/styles.css'
 
 const AppShell = () => {
   const { file, setFile, settings } = useReaderApp()

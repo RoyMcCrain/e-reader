@@ -30,7 +30,7 @@ test('standalone SVG removes escaped CSS imports while preserving publisher styl
   const sanitized = await page.evaluate(async (svg) => {
     const loadSecurity = new Function(
       'return import("/src/lib/reader/security.ts")',
-    ) as () => Promise<typeof import('../../src/lib/reader/security')>
+    ) as () => Promise<typeof import('#lib/reader/security')>
     return (await loadSecurity()).secureDocument(svg, 'image/svg+xml')
   }, source)
   expect(sanitized).not.toContain('attacker.invalid')

@@ -1,5 +1,5 @@
-import type { LibraryResponse, CloudBook } from '../lib/library/types'
-import { checkAccess, type AccessEnv } from './access.ts'
+import type { LibraryResponse, CloudBook } from '#lib/library/types'
+import { checkAccess, type AccessEnv } from '#server/access.ts'
 
 interface StoredObject {
   body: ReadableStream<Uint8Array> | null

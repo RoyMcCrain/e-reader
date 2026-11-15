@@ -5,6 +5,7 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 ## 開発
 
 - Bun をパッケージ管理・スクリプト実行に使用します。`bun install`
+- ソース内の参照は `#components/...`・`#lib/...` など、`src` 基準の import に統一します。実行時は `package.json` の `imports`、拡張子なしの型解決は `tsconfig.json` の `paths` で同じ `#*` → `./src/*` を設定しています。Nodeで直接実行する参照は `.ts` を付け、自動生成ファイルとブラウザー内評価の `/src/...` URLは変更しません。
 - Void 1.9.1 が要求する Node.js（`^24.22.0 || >=26.12.0`）に合わせ、24.22.0 を `node` パッケージでプロジェクト内に用意します。Cloudflare workerd は Bun で代用できません。
 - `bun run dev --host 0.0.0.0`（開発サーバー）
 - `bun run typecheck`, `bun run lint`, `bun test`

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { useReaderApp } from '../providers/ReaderProvider'
-import type { CloudBook, LibraryResponse } from '../../lib/library/types'
-import styles from './Library.module.css'
+import { useReaderApp } from '#components/providers/ReaderProvider'
+import type { CloudBook, LibraryResponse } from '#lib/library/types'
+import styles from '#components/library/Library.module.css'
 
 interface LibraryProps {
   cancelPending: RefObject<(() => void) | null>

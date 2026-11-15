@@ -1,4 +1,4 @@
-import { collectZipEntries } from './zip-entries'
+import { collectZipEntries } from '#lib/reader/zip-entries'
 import {
   BlobReader,
   BlobWriter,
