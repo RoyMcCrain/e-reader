@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
+import { turnPage } from './reader-actions'
+
 const forceSingleSpread = async (page: import('@playwright/test').Page) => {
 	await page.addInitScript(() => {
 		localStorage.setItem(
@@ -113,11 +115,11 @@ test('ZIP images turn rapidly and remain within bounds', async ({ page }) => {
 		buffer: Buffer.from(archive),
 	})
 	await expect(page.getByRole('img', { name: '画像 1 / 6' })).toBeVisible()
-	await page.getByRole('button', { name: '次へ' }).click()
-	await page.getByRole('button', { name: '前へ' }).click()
-	await page.getByRole('button', { name: '次へ' }).click()
+	await turnPage(page, true)
+	await turnPage(page, false)
+	await turnPage(page, true)
 	await expect(page.getByRole('img', { name: '画像 2 / 6' })).toBeVisible()
-	await page.getByRole('button', { name: '次へ' }).click()
+	await turnPage(page, true)
 	await expect(page.getByRole('img', { name: '画像 3 / 6' })).toBeVisible()
 	await page
 		.getByRole('main', { name: '読書ページ' })

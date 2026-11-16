@@ -21,16 +21,6 @@ const paths: Record<string, ReactNode> = {
 			/>
 		</>
 	),
-	prev: (
-		<>
-			<path d="m15 18-6-6 6-6" />
-		</>
-	),
-	next: (
-		<>
-			<path d="m9 18 6-6-6-6" />
-		</>
-	),
 }
 
 interface IconProps {

@@ -79,7 +79,9 @@ test('EPUB keeps publisher layout and illustration while blocking active content
 		buffer: Buffer.from(await makeEpub()),
 	})
 	await expect(page.getByRole('region', { name: '読書画面' })).toBeVisible()
-	await expect(page.getByRole('button', { name: '次へ' })).toBeEnabled()
+	await expect(
+		page.getByRole('progressbar', { name: '読書の進捗' }),
+	).toBeVisible()
 	const foliate = page.locator('foliate-view')
 	await expect(foliate).toHaveCount(1)
 	await expect

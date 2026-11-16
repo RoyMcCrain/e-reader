@@ -76,7 +76,6 @@ interface ZipSetters {
 	setIndices: Dispatch<SetStateAction<number[]>>
 	setUrls: Dispatch<SetStateAction<string[]>>
 	setProgress: Dispatch<SetStateAction<number>>
-	setAtStart: Dispatch<SetStateAction<boolean>>
 	setAtEnd: Dispatch<SetStateAction<boolean>>
 	setError: Dispatch<SetStateAction<string>>
 }
@@ -107,7 +106,6 @@ const updateZip = async (
 	setters.setProgress(
 		Math.round(((lead + indices.length) / archive.names.length) * 100),
 	)
-	setters.setAtStart(lead === 0)
 	setters.setAtEnd(lead + indices.length >= archive.names.length)
 }
 const scheduleZipUpdate = (refs: ZipRefs, setters: ZipSetters) => {
@@ -275,7 +273,6 @@ const openReaderFile = async ({
 			onLocation: (location) => {
 				if (signal.aborted || refs.generation.current !== id) return
 				setters.setProgress(Math.round(location.progress))
-				setters.setAtStart(location.atStart)
 				setters.setAtEnd(location.atEnd)
 			},
 			onError: (cause) => {
@@ -369,7 +366,6 @@ const useOpenFile = ({
 		setLoading(true)
 		setters.setError('')
 		setters.setProgress(0)
-		setters.setAtStart(true)
 		setters.setAtEnd(false)
 		setArchive(null)
 		setUrls([])
@@ -433,12 +429,6 @@ const useOpenFile = ({
 	])
 }
 
-const navigationDisabled = (
-	loading: boolean,
-	atBoundary: boolean,
-	fatalError: boolean,
-) => loading || atBoundary || fatalError
-
 interface ReaderControlsProps {
 	onClose: () => void
 	onSettings: () => void
@@ -447,11 +437,9 @@ interface ReaderControlsProps {
 	toggleToc: () => void
 	goTo: (href: string) => void
 	loading: boolean
-	atStart: boolean
 	atEnd: boolean
 	hasSession: boolean
 	error: string
-	turn: (next: boolean) => void
 	count: number
 	currentIndex: number
 	indices: number[]
@@ -475,11 +463,9 @@ const ReaderControls = ({
 	toggleToc,
 	goTo,
 	loading,
-	atStart,
 	atEnd,
 	hasSession,
 	error,
-	turn,
 	count,
 	currentIndex,
 	indices,
@@ -513,18 +499,6 @@ const ReaderControls = ({
 		</header>
 		{children}
 		<footer className={styles.footer} dir={direction}>
-			<button
-				aria-label="前へ"
-				title="前へ"
-				disabled={navigationDisabled(
-					loading,
-					atStart,
-					Boolean(error) && !hasSession,
-				)}
-				onClick={() => turn(false)}
-			>
-				<Icon name={direction === 'rtl' ? 'next' : 'prev'} />
-			</button>
 			<ReaderProgress
 				count={count}
 				currentIndex={currentIndex}
@@ -535,18 +509,6 @@ const ReaderControls = ({
 				unavailable={Boolean(error) && !hasSession}
 				direction={direction}
 			/>
-			<button
-				aria-label="次へ"
-				title="次へ"
-				disabled={navigationDisabled(
-					loading,
-					atEnd,
-					Boolean(error) && !hasSession,
-				)}
-				onClick={() => turn(true)}
-			>
-				<Icon name={direction === 'rtl' ? 'prev' : 'next'} />
-			</button>
 		</footer>
 		{/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- native dialog backdrop clicks dismiss; Escape and the close button provide keyboard dismissal. */}
 		<dialog
@@ -613,7 +575,6 @@ export const Reader = ({
 	const [showToc, setShowToc] = useState(false)
 	const [direction, setDirection] = useState<'ltr' | 'rtl'>('ltr')
 	const [progress, setProgress] = useState(0)
-	const [atStart, setAtStart] = useState(true)
 	const [atEnd, setAtEnd] = useState(false)
 	const [error, setError] = useState('')
 	const [loading, setLoading] = useState(true)
@@ -639,7 +600,6 @@ export const Reader = ({
 			setIndices,
 			setUrls,
 			setProgress,
-			setAtStart,
 			setAtEnd,
 			setError,
 		}),
@@ -732,11 +692,9 @@ export const Reader = ({
 				toggleToc={() => setShowToc(!showToc)}
 				goTo={goTo}
 				loading={loading}
-				atStart={atStart}
 				atEnd={atEnd}
 				hasSession={hasSession}
 				error={error}
-				turn={turn}
 				count={count}
 				currentIndex={currentIndex}
 				indices={indices}

@@ -39,12 +39,13 @@ export const ReaderProgress = ({
 	const remaining = progressRemaining(count, currentIndex, indices)
 	const detail = atEnd ? '最終ページ' : remaining
 	const valueText = [location, `${value}%`, detail].filter(Boolean).join('、')
-	const label = count ? location : `${value}%`
 	return (
 		<div className={styles.progress} title={valueText}>
-			<span className={styles.progressLabel} dir="ltr">
-				{label}
-			</span>
+			{count > 0 && (
+				<span className={styles.progressLabel} dir="ltr">
+					{location}
+				</span>
+			)}
 			{/* oxlint-disable jsx-a11y/prefer-tag-over-role -- keep the styled RTL-aware indicator as a div while exposing its complete accessible progress semantics. */}
 			<div
 				className={styles.progressTrack}
