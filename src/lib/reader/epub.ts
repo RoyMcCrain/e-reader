@@ -16,7 +16,11 @@ import type {
 import type { ReaderSettings } from '#lib/reader/preferences'
 import { secureDocument } from '#lib/reader/security'
 import { bindEpubInput, bindHostInput } from '#lib/reader/input'
-import { awaitOwned, awaitWithAbort } from '#lib/reader/epub-layout'
+import {
+  awaitContentLayout,
+  awaitOwned,
+  awaitWithAbort,
+} from '#lib/reader/epub-layout'
 import { collectZipEntries } from '#lib/reader/zip-entries'
 
 type Book = EpubBook
@@ -87,6 +91,10 @@ const makePane = (
 }
 const rendererOf = (pane: Pane) =>
   pane.view.renderer as unknown as FoliateRenderer
+const awaitPaneLayout = async (pane: Pane, signal: AbortSignal) => {
+  const doc = rendererOf(pane).getContents()[0]?.doc
+  if (doc) await awaitContentLayout(doc, signal)
+}
 const setPaneStyles = (pane: Pane, settings: ReaderSettings) => {
   const renderer = rendererOf(pane)
   renderer.setAttribute('max-column-count', '1')
@@ -267,6 +275,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
         () => pane.view.close(),
       )
       cancelled(options, () => closed)
+      await awaitPaneLayout(pane, opening.signal)
+      cancelled(options, () => closed)
     }
     if (!physicalDouble && panes.length > 1) {
       const peer = panes.pop()!
@@ -283,6 +293,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
       )
       cancelled(options, () => closed)
       await primary.goTo(readingAnchor)
+      await awaitPaneLayout(panes[0], opening.signal)
+      cancelled(options, () => closed)
       // Foliate's native resize can settle after the first navigation.
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => resolve()),
@@ -327,6 +339,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
     const index = nextSection(book!, current, forward ? 1 : -1)
     if (index === undefined) return false
     await renderer.goTo?.({ index, anchor: forward ? 0 : 1 })
+    await awaitPaneLayout(pane, opening.signal)
+    cancelled(options, () => closed)
     return true
   }
   const syncPeer = async () => {
@@ -347,8 +361,11 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
     } else {
       const primaryIndex = sectionIndex(book, panes[0])
       const peerIndex = sectionIndex(book, panes[1])
-      if (primaryIndex !== peerIndex)
+      if (primaryIndex !== peerIndex) {
         await rendererOf(panes[1]).goTo?.({ index: primaryIndex, anchor: 0 })
+        await awaitPaneLayout(panes[1], opening.signal)
+        cancelled(options, () => closed)
+      }
       const primaryRenderer = rendererOf(panes[0])
       const peerRenderer = rendererOf(panes[1])
       if (primaryIndex === sectionIndex(book, panes[1])) {
@@ -357,9 +374,11 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
         if (target <= count) await jump(panes[1], target)
         else {
           const next = nextSection(book, primaryIndex, 1)
-          if (next !== undefined)
+          if (next !== undefined) {
             await peerRenderer.goTo?.({ index: next, anchor: 0 })
-          else return
+            await awaitPaneLayout(panes[1], opening.signal)
+            cancelled(options, () => closed)
+          } else return
         }
       }
     }
@@ -399,6 +418,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
       event.preventDefault()
       void enqueue(async () => {
         await panes[0].view.goTo(href)
+        await awaitPaneLayout(panes[0], opening.signal)
+        cancelled(options, () => closed)
         rememberAnchor()
         if (columns === 2) await syncPeer()
         notify()
@@ -423,6 +444,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
     goTo: (href) =>
       enqueue(async () => {
         await panes[0].view.goTo(href)
+        await awaitPaneLayout(panes[0], opening.signal)
+        cancelled(options, () => closed)
         rememberAnchor()
         if (columns === 2) await syncPeer()
         notify()
@@ -522,6 +545,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
       opening.signal,
       () => primaryPane.view.close(),
     )
+    cancelled(options, () => closed)
+    await awaitPaneLayout(primaryPane, opening.signal)
     cancelled(options, () => closed)
     rememberAnchor()
     panes[0].view.addEventListener('relocate', notify)
