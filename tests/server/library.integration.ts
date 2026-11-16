@@ -48,7 +48,8 @@ before(async () => {
 		await bucket.put(`books/${record.id}.${record.format}`, bytes[index]!)
 	await bucket.put('library.json', JSON.stringify({ books: records }))
 	globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-		if (String(input) === `${issuer}/cdn-cgi/access/certs`)
+		const url = input instanceof Request ? input.url : input.toString()
+		if (url === `${issuer}/cdn-cgi/access/certs`)
 			return Promise.resolve(new Response(JSON.stringify({ keys: [jwk] })))
 		return originalFetch(input, init)
 	}) as typeof fetch

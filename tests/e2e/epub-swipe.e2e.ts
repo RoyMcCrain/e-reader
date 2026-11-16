@@ -91,6 +91,8 @@ for (const direction of ['ltr', 'rtl'] as const) {
 		await expect.poll(async () => (await epubState(page)).cfi).toBeTruthy()
 
 		await page.evaluate(() => {
+			// The wrapper calls this method with its original receiver via apply.
+			// oxlint-disable-next-line typescript/unbound-method
 			const original = Element.prototype.animate
 			;(window as Window & { gestureDurations?: number[] }).gestureDurations =
 				[]

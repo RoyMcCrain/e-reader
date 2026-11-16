@@ -29,6 +29,8 @@ export const ReaderProvider = ({ children }: ReaderProviderProps) => {
 	const [hydrated, setHydrated] = useState(false)
 
 	useEffect(() => {
+		// Read browser storage after SSR hydration so the initial renders agree.
+		// oxlint-disable-next-line react/set-state-in-effect
 		setSettings(readSettings())
 		setHydrated(true)
 	}, [])

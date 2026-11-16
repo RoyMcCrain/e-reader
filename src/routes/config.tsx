@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { DEFAULT_SETTINGS, type ReaderSettings } from '#lib/reader/preferences'
@@ -29,8 +29,9 @@ const NumericSetting = ({
 	value,
 	onChange,
 }: NumericSettingProps) => {
-	const [draft, setDraft] = useState(String(value))
-	useEffect(() => setDraft(String(value)), [value])
+	const [draftState, setDraftState] = useState({ value, draft: String(value) })
+	if (draftState.value !== value) setDraftState({ value, draft: String(value) })
+	const draft = draftState.draft
 	const commit = () => {
 		const parsed = Number(draft)
 		const next =
@@ -38,7 +39,7 @@ const NumericSetting = ({
 				? Math.min(max, Math.max(min, parsed))
 				: value
 		onChange(field, next)
-		setDraft(String(next))
+		setDraftState({ value: next, draft: String(next) })
 	}
 	return (
 		<div className={styles.numericSetting}>
@@ -53,7 +54,7 @@ const NumericSetting = ({
 					value={value}
 					onChange={(event) => {
 						const next = Number(event.currentTarget.value)
-						setDraft(String(next))
+						setDraftState({ value: next, draft: String(next) })
 						onChange(field, next)
 					}}
 				/>
@@ -65,7 +66,9 @@ const NumericSetting = ({
 						max={max}
 						step={step}
 						value={draft}
-						onChange={(event) => setDraft(event.currentTarget.value)}
+						onChange={(event) =>
+							setDraftState({ value, draft: event.currentTarget.value })
+						}
 						onBlur={commit}
 						onKeyDown={(event) => {
 							if (event.key === 'Enter') event.currentTarget.blur()

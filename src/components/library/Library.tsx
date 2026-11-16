@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
-import type { CloudBook, LibraryResponse } from '#lib/library/types'
+import type { CloudBook } from '#lib/library/types'
 
 import styles from '#components/library/Library.module.css'
 
@@ -19,15 +19,24 @@ const validId = (id: unknown) =>
 const validFormat = (format: unknown) => format === 'epub' || format === 'zip'
 const validSize = (size: unknown) =>
 	typeof size === 'number' && Number.isFinite(size) && size >= 0
-const validBookDetails = (book: CloudBook) =>
-	validId(book.id) &&
-	typeof book.name === 'string' &&
-	validFormat(book.format) &&
-	validSize(book.size)
-const validBook = (value: unknown): value is CloudBook =>
-	Boolean(
-		value && typeof value === 'object' && validBookDetails(value as CloudBook),
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+const validBook = (value: unknown): value is CloudBook => {
+	if (!isRecord(value)) return false
+	const book = value
+	return (
+		validId(book.id) &&
+		typeof book.name === 'string' &&
+		validFormat(book.format) &&
+		validSize(book.size)
 	)
+}
+
+const booksFromResponse = (value: unknown): CloudBook[] => {
+	if (!isRecord(value) || !Array.isArray(value.books))
+		throw new Error('Invalid book list response')
+	return value.books.filter(validBook)
+}
 
 const getBooksError = (
 	response: Response,
@@ -50,9 +59,8 @@ const applyBooksResponse = async (
 		if (!controller.signal.aborted) setListError(error)
 		return
 	}
-	const result: LibraryResponse = await response.json()
-	if (!controller.signal.aborted)
-		setBooks(Array.isArray(result.books) ? result.books.filter(validBook) : [])
+	const result: unknown = await response.json()
+	if (!controller.signal.aborted) setBooks(booksFromResponse(result))
 }
 
 const loadBooks = async (
@@ -128,7 +136,7 @@ const LibraryState = ({
 					<button onClick={retry}>再試行</button>
 				</div>
 			)
-		default:
+		case '':
 			return books.length === 0 ? <p>クラウドに本はありません。</p> : null
 	}
 }
@@ -231,7 +239,7 @@ export const Library = ({ cancelPending }: LibraryProps) => {
 			{!loading && !listError && (
 				<BookList books={books} busyId={busyId} openBook={openBook} />
 			)}
-			{busyId && <p role="status">本をダウンロードしています…</p>}
+			{busyId && <output>本をダウンロードしています…</output>}
 			{downloadError && (
 				<p role="alert" className={styles.error}>
 					{downloadError}

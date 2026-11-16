@@ -14,6 +14,8 @@ const policy =
 const normalizedUrl = (value: string) =>
 	value
 		.trim()
+		// Control bytes are removed before URL scheme validation.
+		// oxlint-disable-next-line no-control-regex
 		.replace(/[\u0000-\u0020\u007f]+/g, '')
 		.toLowerCase()
 const isUnsafeNavigation = (value: string) => {

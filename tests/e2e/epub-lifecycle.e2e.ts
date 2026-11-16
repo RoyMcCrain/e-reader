@@ -26,7 +26,9 @@ test('aborting during primary open closes a renderer allocated by late completio
 	await page.evaluate(async (bytes) => {
 		const readerModule = '/src/lib/reader/epub.ts'
 
-		const { openEpub } = await import(readerModule)
+		const { openEpub } = (await import(
+			readerModule
+		)) as typeof import('#lib/reader/epub')
 		const host = document.createElement('div')
 		host.style.cssText = 'position:fixed;width:800px;height:600px;'
 		document.body.append(host)
@@ -39,6 +41,7 @@ test('aborting during primary open closes a renderer allocated by late completio
 			marginBottom: 8,
 			marginLeft: 8,
 			spread: 'single' as const,
+			firstPageSingle: false,
 			gutter: 16,
 		}
 		let restoreView = () => {}
@@ -197,7 +200,9 @@ test('closing during secondary open closes the renderer allocated by late comple
 	await page.evaluate(async (bytes) => {
 		const readerModule = '/src/lib/reader/epub.ts'
 
-		const { openEpub } = await import(readerModule)
+		const { openEpub } = (await import(
+			readerModule
+		)) as typeof import('#lib/reader/epub')
 		const host = document.createElement('div')
 		host.style.cssText = 'position:fixed;width:800px;height:600px;'
 		document.body.append(host)
@@ -210,6 +215,7 @@ test('closing during secondary open closes the renderer allocated by late comple
 			marginBottom: 8,
 			marginLeft: 8,
 			spread: 'single' as const,
+			firstPageSingle: false,
 			gutter: 16,
 		}
 		let restoreView = () => {}

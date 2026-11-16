@@ -1,6 +1,21 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
+const persistedNumber = (
+	page: import('@playwright/test').Page,
+	key: 'fontSize' | 'lineHeight',
+) =>
+	page.evaluate((setting) => {
+		const stored: unknown = JSON.parse(
+			localStorage.getItem('shiori.reader.settings.v1') ?? '{}',
+		)
+		if (typeof stored !== 'object' || stored === null || !(setting in stored))
+			return undefined
+		const settings = stored as Record<string, unknown>
+		const value = settings[setting]
+		return typeof value === 'number' ? value : undefined
+	}, key)
+
 const makeArchive = async () => {
 	const writer = new ZipWriter(new BlobWriter())
 	const pixel = Uint8Array.from(
@@ -33,15 +48,7 @@ test('standalone config persists preferences across reload and recovers malforme
 	await page.getByLabel('文字サイズの値').press('Control+A')
 	await page.keyboard.type('27')
 	await page.getByLabel('文字サイズの値').press('Tab')
-	await expect
-		.poll(() =>
-			page.evaluate(
-				() =>
-					JSON.parse(localStorage.getItem('shiori.reader.settings.v1') ?? '{}')
-						.fontSize,
-			),
-		)
-		.toBe(27)
+	await expect.poll(() => persistedNumber(page, 'fontSize')).toBe(27)
 	await page.reload()
 	await expect(page.getByLabel('文字サイズの値')).toHaveValue('27')
 	await page.evaluate(() =>
@@ -55,15 +62,7 @@ test('standalone config persists preferences across reload and recovers malforme
 	const size = page.getByLabel('文字サイズの値')
 	await size.fill('36')
 	await size.press('Tab')
-	await expect
-		.poll(() =>
-			page.evaluate(
-				() =>
-					JSON.parse(localStorage.getItem('shiori.reader.settings.v1') ?? '{}')
-						.fontSize,
-			),
-		)
-		.toBe(36)
+	await expect.poll(() => persistedNumber(page, 'fontSize')).toBe(36)
 	await size.fill('99')
 	await size.press('Tab')
 	await expect(size).toHaveValue('36')
@@ -101,30 +100,14 @@ test('config overlays a live book and disables its keyboard input', async ({
 	await fontSize.press('Control+A')
 	await page.keyboard.type('24')
 	await fontSize.press('Tab')
-	await expect
-		.poll(() =>
-			page.evaluate(
-				() =>
-					JSON.parse(localStorage.getItem('shiori.reader.settings.v1') ?? '{}')
-						.fontSize,
-			),
-		)
-		.toBe(24)
+	await expect.poll(() => persistedNumber(page, 'fontSize')).toBe(24)
 	const lineHeight = page.getByLabel('行間の値')
 	await lineHeight.click()
 	await lineHeight.press('Control+A')
 	await page.keyboard.type('2.1')
 	await lineHeight.press('Enter')
 	await expect(lineHeight).toHaveValue('2.1')
-	await expect
-		.poll(() =>
-			page.evaluate(
-				() =>
-					JSON.parse(localStorage.getItem('shiori.reader.settings.v1') ?? '{}')
-						.lineHeight,
-			),
-		)
-		.toBe(2.1)
+	await expect.poll(() => persistedNumber(page, 'lineHeight')).toBe(2.1)
 	await page.getByRole('button', { name: '読書に戻る' }).click()
 	await expect(page.getByRole('img', { name: '画像 2 / 3' })).toBeVisible()
 	await page.getByRole('button', { name: '設定' }).click()

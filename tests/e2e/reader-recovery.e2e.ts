@@ -79,6 +79,8 @@ test('a delayed page extraction does not animate after settings hide the reader'
 }) => {
 	await forceSingleSpread(page)
 	await page.addInitScript(() => {
+		// The wrapper calls this method with its original receiver via call.
+		// oxlint-disable-next-line typescript/unbound-method
 		const read = Blob.prototype.arrayBuffer
 		let delayNextRead = false
 		let releaseRead: (() => void) | undefined

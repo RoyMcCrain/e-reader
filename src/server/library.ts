@@ -19,12 +19,14 @@ const baseHeaders = {
 	'X-Content-Type-Options': 'nosniff',
 }
 const idPattern = /^[a-f0-9]{64}$/
+// Control bytes are forbidden in filenames at both validation boundaries.
+// oxlint-disable-next-line no-control-regex
 const filenamePattern = /^[^/\\\u0000-\u001f\u007f]{1,240}$/u
 
 const response = (
 	body: BodyInit | null,
 	status: number,
-	headers: HeadersInit = {},
+	headers: Record<string, string> = {},
 ) => new Response(body, { status, headers: { ...baseHeaders, ...headers } })
 
 const validIdentity = (book: Record<string, unknown>) =>
@@ -35,6 +37,7 @@ const validIdentity = (book: Record<string, unknown>) =>
 const validName = (book: Record<string, unknown>) =>
 	typeof book.name === 'string' &&
 	filenamePattern.test(book.name) &&
+	// oxlint-disable-next-line no-control-regex
 	!/[\u0000-\u001f\u007f]/u.test(book.name) &&
 	(book.format === 'epub' || book.format === 'zip') &&
 	book.name.toLowerCase().endsWith(`.${book.format}`)

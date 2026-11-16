@@ -19,6 +19,8 @@ const makeArchive = async (files: Record<string, string>) => {
 
 describe('ZIP画像順序', () => {
 	test('公開アーカイブ読み込みは上限超過でZIP列挙を停止する', async () => {
+		// Restoration snapshot only; restored by identity and never called unbound.
+		// oxlint-disable-next-line typescript/unbound-method
 		const original = ZipReader.prototype.getEntriesGenerator
 		let requested = 0
 		ZipReader.prototype.getEntriesGenerator = async function* () {
@@ -78,6 +80,8 @@ describe('ZIP画像順序', () => {
 	test('実際のZIPから画像を展開し、同時要求のURLを共有する', async () => {
 		const archiveFile = await makeArchive({ 'page1.jpg': 'image data' })
 		const created: string[] = []
+		// Restoration snapshot only; restored by identity.
+		// oxlint-disable-next-line typescript/unbound-method
 		const create = URL.createObjectURL
 		URL.createObjectURL = (() => {
 			const url = `blob:test-${created.length}`
@@ -108,6 +112,8 @@ describe('ZIP画像順序', () => {
 			'4.jpg': 'four',
 		})
 		const created: string[] = []
+		// Restoration snapshot only; restored by identity.
+		// oxlint-disable-next-line typescript/unbound-method
 		const create = URL.createObjectURL
 		URL.createObjectURL = (() => {
 			const url = `blob:parallel-${created.length}`
@@ -132,7 +138,11 @@ describe('ZIP画像順序', () => {
 		const archiveFile = await makeArchive({ 'page1.jpg': 'image data' })
 		const created: string[] = []
 		const revoked: string[] = []
+		// Restoration snapshot only; restored by identity.
+		// oxlint-disable-next-line typescript/unbound-method
 		const create = URL.createObjectURL
+		// Restoration snapshot only; restored by identity.
+		// oxlint-disable-next-line typescript/unbound-method
 		const revoke = URL.revokeObjectURL
 		URL.createObjectURL = (() => {
 			const url = `blob:pending-${created.length}`
@@ -168,7 +178,11 @@ describe('ZIP画像順序', () => {
 		})
 		const created: string[] = []
 		const revoked: string[] = []
+		// Restoration snapshot only; restored by identity.
+		// oxlint-disable-next-line typescript/unbound-method
 		const create = URL.createObjectURL
+		// Restoration snapshot only; restored by identity.
+		// oxlint-disable-next-line typescript/unbound-method
 		const revoke = URL.revokeObjectURL
 		URL.createObjectURL = (() => {
 			const url = `blob:test-${created.length}`

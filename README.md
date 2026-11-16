@@ -10,13 +10,19 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 - Oxfmtはimportと`package.json`（scriptsを含む）をソートし、コードのインデントには幅2のタブを使います。YAMLはスペースを使い、`bun.lock`と生成済み`src/routeTree.gen.ts`は整形対象外です。副作用import同士の相対順は保持しますが、通常のimportはその前後に移動し得るため、初期化順への依存は差分で確認します。
 - Workers の実行環境は Cloudflare workerd です。Bun 1.4.4 の組み込みundiciはCloudflare開発サーバーとMiniflareのホスト側R2ストリーム処理に必要な互換性を満たさないため、これらのホスト処理にはNodeを使用します。
 - `bun run dev --host 0.0.0.0`（開発サーバー）
-- `bun run typecheck`、`bun run lint`（Oxlint + oxlint-tsgolint の型対応 no-floating-promises / await-thenable）、`bun run format`（Oxfmtで整形）、`bun run format:check`（整形の確認）、`bun run test`
+- `bun run typecheck`、`bun run lint`（Oxlint + oxlint-tsgolint の型対応ルール）、`bun run format`（Oxfmtで整形）、`bun run format:check`（整形の確認）、`bun run test`
 - サーバー統合テスト: `bun run test:server`。実際のMiniflare R2と署名付きJWTを使用します。Miniflare 5のR2ストリーム処理はBunではなく、プロジェクトのNode.jsで検証します。
 - ブラウザテスト初回: `bunx --bun --no-install playwright install chromium`、実行: `bun run test:e2e`。Playwright runner/workers は Bun、Playwright が起動する Vite webServer はNode 26.13.1です。デスクトップ／モバイル／native各プロジェクトで検証します。
 - `bun run build`、本番ビルドのローカル確認: `bun run preview`（既定 `http://localhost:4173`）
 - デプロイ: `bunx --no-install void deploy --platform cloudflare`。Void CLIはプロジェクト内のNodeで起動します。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
 
 スマホから開く場合は同じネットワークの PC の IP アドレスと開発サーバーのポートを指定します。OS のファイアウォールや WSL の設定によってはポート転送が必要です。
+
+## 静的解析ポリシー
+
+Oxlint は TypeScript の型安全性に加えて React Hooks / Compiler correctness と JSX accessibility を error として検査します。`any` と unsafe な型の利用は許可せず、外部データは `unknown` として検証してから扱います。これらの検査は誤りを減らす補助であり、すべての不具合やアクセシビリティ上の問題を検出する保証ではありません。
+
+例外は、意図した制御文字除去・拒否の正規表現、ブラウザー設定の hydration、native dialog の backdrop dismissal のように、個別の理由を隣接コメントで説明できる場合に限ります。テストでは、元のメソッドの復元や receiver を保持した呼び出しのための unbound-method 参照を限定的に許容します。例外は対象箇所だけに限定し、型安全性・React correctness のルール全体を無効化しません。
 
 ## 操作
 

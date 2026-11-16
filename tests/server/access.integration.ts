@@ -37,7 +37,8 @@ before(async () => {
 	Object.assign(jwk, { kid: 'test-key', alg: 'RS256', use: 'sig' })
 	bucket = await miniflare.getR2Bucket('BOOKS')
 	globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-		if (String(input) === `${issuer}/cdn-cgi/access/certs`)
+		const url = input instanceof Request ? input.url : input.toString()
+		if (url === `${issuer}/cdn-cgi/access/certs`)
 			return Promise.resolve(new Response(JSON.stringify({ keys: [jwk] })))
 		return originalFetch(input, init)
 	}) as typeof fetch

@@ -1,8 +1,8 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
-	"plugins": ["typescript"],
+	"plugins": ["typescript", "react", "jsx-a11y"],
 	"categories": {
-		"correctness": "off"
+		"correctness": "error"
 	},
 	"ignorePatterns": [
 		"src/routeTree.gen.ts",
@@ -18,10 +18,7 @@
 		"no-var": "error",
 		"prefer-const": [
 			"error",
-			{
-				"destructuring": "any",
-				"ignoreReadBeforeAssign": false
-			}
+			{ "destructuring": "any", "ignoreReadBeforeAssign": false }
 		],
 		"prefer-rest-params": "error",
 		"prefer-spread": "error",
@@ -48,15 +45,28 @@
 		],
 		"no-unused-vars": [
 			"error",
-			{
-				"vars": "all",
-				"args": "after-used",
-				"caughtErrors": "all"
-			}
+			{ "vars": "all", "args": "after-used", "caughtErrors": "all" }
 		],
 		"typescript/no-wrapper-object-types": "error",
 		"typescript/prefer-as-const": "error",
 		"typescript/prefer-namespace-keyword": "error",
-		"typescript/triple-slash-reference": "error"
+		"typescript/triple-slash-reference": "error",
+		"react/rules-of-hooks": "error",
+		"react/exhaustive-deps": "error",
+		"react/jsx-key": "error",
+		"react/static-components": "error",
+		"react/immutability": "error",
+		"react/purity": "error",
+		"react/refs": "error",
+		"react/set-state-in-render": "error",
+		"typescript/no-misused-promises": "error",
+		"typescript/switch-exhaustiveness-check": "error",
+		"typescript/no-explicit-any": "error",
+		"typescript/no-unsafe-assignment": "error",
+		"typescript/no-unsafe-call": "error",
+		"typescript/no-unsafe-member-access": "error",
+		"typescript/no-unsafe-argument": "error",
+		"typescript/no-unsafe-return": "error",
+		"eqeqeq": ["error", "always"]
 	}
 }

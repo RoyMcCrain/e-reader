@@ -1,7 +1,10 @@
 import type { TocItem } from 'foliate-js/epub.js'
 import {
 	useEffect,
+	useEffectEvent,
 	useLayoutEffect,
+	useMemo,
+	useCallback,
 	useRef,
 	useState,
 	type Dispatch,
@@ -214,11 +217,7 @@ const ReaderStage = ({
 				))}
 			</div>
 		)}
-		{loading && (
-			<p className={styles.message} role="status">
-				本を開いています…
-			</p>
-		)}
+		{loading && <output className={styles.message}>本を開いています…</output>}
 		{error && (
 			<p className={styles.error} role="alert">
 				{error}
@@ -239,6 +238,7 @@ const openReaderFile = async ({
 	setArchive,
 	setToc,
 	setDirection,
+	setHasSession,
 }: {
 	file: File
 	id: number
@@ -251,6 +251,7 @@ const openReaderFile = async ({
 	setArchive: Dispatch<SetStateAction<Archive | null>>
 	setToc: Dispatch<SetStateAction<TocItem[]>>
 	setDirection: Dispatch<SetStateAction<'ltr' | 'rtl'>>
+	setHasSession: Dispatch<SetStateAction<boolean>>
 }) => {
 	if (file.name.toLowerCase().endsWith('.zip')) {
 		const archive = await openImageArchive(file)
@@ -259,6 +260,7 @@ const openReaderFile = async ({
 			return
 		}
 		refs.session.current = { kind: 'zip', archive }
+		setHasSession(true)
 		setArchive(archive)
 		await updateZip(archive, 0, id, refs, setters)
 	} else if (file.name.toLowerCase().endsWith('.epub')) {
@@ -285,6 +287,7 @@ const openReaderFile = async ({
 			return
 		}
 		refs.session.current = { kind: 'epub', epub }
+		setHasSession(true)
 		setDirection(epub.dir)
 		setToc(epub.toc)
 	} else throw new Error('EPUBまたは画像ZIPを選んでください。')
@@ -315,7 +318,14 @@ const useResizeColumns = (
 				Number.parseFloat(computed.paddingRight),
 		)
 		return () => observer.disconnect()
-	}, [settings.spread, settings.marginLeft, settings.marginRight])
+	}, [
+		host,
+		settings.spread,
+		settings.marginLeft,
+		settings.marginRight,
+		columnsRef,
+		setColumns,
+	])
 }
 const useOpenFile = ({
 	file,
@@ -330,6 +340,7 @@ const useOpenFile = ({
 	setShowToc,
 	setLoading,
 	setDirection,
+	setHasSession,
 }: {
 	file: File
 	active: boolean
@@ -343,10 +354,17 @@ const useOpenFile = ({
 	setShowToc: Dispatch<SetStateAction<boolean>>
 	setLoading: Dispatch<SetStateAction<boolean>>
 	setDirection: Dispatch<SetStateAction<'ltr' | 'rtl'>>
+	setHasSession: Dispatch<SetStateAction<boolean>>
 }) => {
+	const currentOpenOptions = useEffectEvent(() => ({ active, settings }))
 	useEffect(() => {
+		const { generation: generationRef, lead: leadRef } = refs
 		const controller = new AbortController()
-		const id = ++refs.generation.current
+		const id = ++generationRef.current
+		const hostNode = host.current
+		if (!hostNode) return
+		const { active: currentActive, settings: currentSettings } =
+			currentOpenOptions()
 		setLoading(true)
 		setters.setError('')
 		setters.setProgress(0)
@@ -355,42 +373,61 @@ const useOpenFile = ({
 		setters.setIndices([])
 		setToc([])
 		setDirection('ltr')
+		setHasSession(false)
 		setShowToc(false)
-		refs.lead.current = 0
+		leadRef.current = 0
 		void openReaderFile({
 			file,
 			id,
-			active,
-			settings,
-			host: host.current!,
+			active: currentActive,
+			settings: currentSettings,
+			host: hostNode,
 			signal: controller.signal,
 			refs,
 			setters,
 			setArchive,
 			setToc,
 			setDirection,
+			setHasSession,
 		})
 			.then(() => {
-				if (!controller.signal.aborted && refs.generation.current === id)
+				if (!controller.signal.aborted && generationRef.current === id)
 					setLoading(false)
 			})
 			.catch((cause) => {
-				if (refs.generation.current !== id || controller.signal.aborted) return
+				if (generationRef.current !== id || controller.signal.aborted) return
 				setters.setError(messageFor(cause))
 				setLoading(false)
 			})
+		const {
+			animation: animationRef,
+			session: sessionRef,
+			swipe: swipeRef,
+		} = refs
 		return () => {
 			controller.abort()
-			refs.generation.current++
-			refs.animation.current?.cancel()
-			refs.animation.current = null
-			refs.swipe.current = null
-			const previous = refs.session.current
-			refs.session.current = null
+			generationRef.current++
+			animationRef.current?.cancel()
+			animationRef.current = null
+			swipeRef.current = null
+			const previous = sessionRef.current
+			sessionRef.current = null
 			if (previous?.kind === 'zip') void previous.archive.close()
 			if (previous?.kind === 'epub') void previous.epub.close()
 		}
-	}, [file])
+	}, [
+		file,
+		host,
+		refs,
+		setters,
+		setLoading,
+		setArchive,
+		setUrls,
+		setToc,
+		setDirection,
+		setShowToc,
+		setHasSession,
+	])
 }
 
 const navigationDisabled = (
@@ -513,6 +550,7 @@ const ReaderControls = ({
 				<Icon name={direction === 'rtl' ? 'prev' : 'next'} /> 次へ
 			</button>
 		</footer>
+		{/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- native dialog backdrop clicks dismiss; Escape and the close button provide keyboard dismissal. */}
 		<dialog
 			ref={dialog}
 			id="reader-toc-dialog"
@@ -568,9 +606,7 @@ export const Reader = ({
 	const swipe = useRef<SwipeDirection | null>(null)
 	const imageRequest = useRef(0)
 	const activeRef = useRef(active)
-	activeRef.current = active
 	const firstPageSingleRef = useRef(settings.firstPageSingle)
-	firstPageSingleRef.current = settings.firstPageSingle
 	const [columns, setColumns] = useState<1 | 2>(1)
 	const [archive, setArchive] = useState<Archive | null>(null)
 	const [urls, setUrls] = useState<string[]>([])
@@ -583,39 +619,51 @@ export const Reader = ({
 	const [atEnd, setAtEnd] = useState(false)
 	const [error, setError] = useState('')
 	const [loading, setLoading] = useState(true)
+	const [hasSession, setHasSession] = useState(false)
 
-	const refs: ZipRefs = {
-		generation,
-		session,
-		queue,
-		lead: leadRef,
-		columns: columnsRef,
-		animation,
-		swipe,
-		imageRequest,
-		active: activeRef,
-		firstPageSingle: firstPageSingleRef,
-	}
-	const setters: ZipSetters = {
-		setIndices,
-		setUrls,
-		setProgress,
-		setAtStart,
-		setAtEnd,
-		setError,
-	}
-	const turn = (next: boolean, swipeDirection?: SwipeDirection) =>
-		scheduleTurn(next, swipeDirection, refs, setters)
+	const refs = useMemo<ZipRefs>(
+		() => ({
+			generation,
+			session,
+			queue,
+			lead: leadRef,
+			columns: columnsRef,
+			animation,
+			swipe,
+			imageRequest,
+			active: activeRef,
+			firstPageSingle: firstPageSingleRef,
+		}),
+		[],
+	)
+	const setters = useMemo<ZipSetters>(
+		() => ({
+			setIndices,
+			setUrls,
+			setProgress,
+			setAtStart,
+			setAtEnd,
+			setError,
+		}),
+		[],
+	)
+	const turn = useCallback(
+		(next: boolean, swipeDirection?: SwipeDirection) =>
+			scheduleTurn(next, swipeDirection, refs, setters),
+		[refs, setters],
+	)
 
-	useEffect(() => {
+	useLayoutEffect(() => {
+		activeRef.current = active
+		firstPageSingleRef.current = settings.firstPageSingle
+	}, [active, settings.firstPageSingle])
+
+	useLayoutEffect(() => {
 		const element = tocDialog.current
 		if (!element) return
-		if (!active && showToc) {
-			setShowToc(false)
-			return
-		}
-		if (showToc && !element.open) element.showModal()
-		if (!showToc && element.open) element.close()
+		const shouldShowToc = active && showToc
+		if (shouldShowToc && !element.open) element.showModal()
+		if (!shouldShowToc && element.open) element.close()
 	}, [active, showToc])
 
 	useResizeColumns(host, settings, columnsRef, setColumns)
@@ -623,7 +671,7 @@ export const Reader = ({
 		const current = session.current
 		if (current?.kind === 'epub') void current.epub.configure(settings, columns)
 		if (current?.kind === 'zip' && archive) scheduleZipUpdate(refs, setters)
-	}, [settings, columns, loading])
+	}, [settings, columns, loading, archive, refs, setters])
 
 	useEffect(() => {
 		const current = session.current
@@ -637,7 +685,7 @@ export const Reader = ({
 		if (!host.current || current?.kind !== 'zip') return
 		scheduleZipUpdate(refs, setters)
 		return bindHostInput(host.current, 'ltr', turn)
-	}, [active, loading])
+	}, [active, loading, refs, setters, turn])
 
 	useOpenFile({
 		file,
@@ -652,6 +700,7 @@ export const Reader = ({
 		setShowToc,
 		setLoading,
 		setDirection,
+		setHasSession,
 	})
 
 	useLayoutEffect(() => {
@@ -670,7 +719,7 @@ export const Reader = ({
 		const current = session.current
 		if (current?.kind === 'epub') void current.epub.goTo(href)
 	}
-	const currentIndex = indices[0] ?? leadRef.current
+	const currentIndex = indices[0] ?? 0
 	const count = archive?.names.length ?? 0
 	const title = file.name.replace(/\.(epub|zip)$/i, '')
 	const padding = `${settings.marginTop}px ${settings.marginRight}px ${settings.marginBottom}px ${settings.marginLeft}px`
@@ -687,7 +736,7 @@ export const Reader = ({
 				loading={loading}
 				atStart={atStart}
 				atEnd={atEnd}
-				hasSession={session.current !== null}
+				hasSession={hasSession}
 				error={error}
 				turn={turn}
 				count={count}

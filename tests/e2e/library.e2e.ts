@@ -16,7 +16,11 @@ const makeZip = async (names: string[]) => {
 const routeLibrary = async (
 	page: import('@playwright/test').Page,
 	archive: Buffer,
-	options: { listStatus?: number; downloadHtml?: boolean } = {},
+	options: {
+		listStatus?: number
+		downloadHtml?: boolean
+		listPayload?: unknown
+	} = {},
 ) => {
 	await page.route('**/api/books**', async (route) => {
 		const url = new URL(route.request().url())
@@ -24,16 +28,18 @@ const routeLibrary = async (
 			await route.fulfill({
 				status: options.listStatus ?? 200,
 				contentType: 'application/json',
-				body: JSON.stringify({
-					books: [
-						{
-							id: bookId,
-							name: 'sample-fixture.zip',
-							format: 'zip',
-							size: archive.length,
-						},
-					],
-				}),
+				body: JSON.stringify(
+					options.listPayload ?? {
+						books: [
+							{
+								id: bookId,
+								name: 'sample-fixture.zip',
+								format: 'zip',
+								size: archive.length,
+							},
+						],
+					},
+				),
 			})
 		} else if (options.downloadHtml) {
 			await route.fulfill({
@@ -74,6 +80,25 @@ test('authentication errors leave the local file picker usable', async ({
 	await expect(
 		page.getByText('クラウドの本を読むにはログインが必要です。'),
 	).toBeVisible()
+	await page.locator('input[type=file]').setInputFiles({
+		name: 'local-fixture.zip',
+		mimeType: 'application/zip',
+		buffer: archive,
+	})
+	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
+})
+
+test('malformed cloud list reports failure and leaves the local picker usable', async ({
+	page,
+}) => {
+	const archive = await makeZip(['local.png'])
+	await routeLibrary(page, archive, { listPayload: { books: 'invalid' } })
+	await page.goto('/')
+	await page.waitForLoadState('networkidle')
+	await expect(
+		page.getByText('クラウドの本を確認できませんでした。'),
+	).toBeVisible()
+	await expect(page.getByText('クラウドに本はありません。')).toHaveCount(0)
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'local-fixture.zip',
 		mimeType: 'application/zip',

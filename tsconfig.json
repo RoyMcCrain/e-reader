@@ -13,5 +13,11 @@
 		},
 		"types": ["vite/client"]
 	},
-	"include": ["src", "tests", "vite.config.ts", "void.config.ts"]
+	"include": [
+		"src",
+		"tests",
+		"playwright.config.ts",
+		"vite.config.ts",
+		"void.config.ts"
+	]
 }
