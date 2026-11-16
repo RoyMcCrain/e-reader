@@ -47,10 +47,17 @@ after(async () => {
 })
 
 const tokenFor = (
-  claims: { email?: string; aud?: string; iss?: string; exp?: number } = {},
+  claims: {
+    email?: string | null
+    aud?: string
+    iss?: string
+    exp?: number
+  } = {},
 ) => {
   const now = Math.floor(Date.now() / 1000)
-  return new SignJWT({ email: claims.email ?? 'me@rrrr.dev' })
+  const payload =
+    claims.email === null ? {} : { email: claims.email ?? 'me@rrrr.dev' }
+  return new SignJWT(payload)
     .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
     .setSubject('test-user')
     .setIssuer(claims.iss ?? issuer)
@@ -129,6 +136,21 @@ test('rejects wrong identity, expired token, audience and issuer', async () => {
   assert.deepEqual(
     statuses.map(({ status }) => status),
     [403, 401, 401, 401],
+  )
+})
+
+test('service-style JWT without owner email cannot list or download books', async () => {
+  const serviceToken = await tokenFor({ email: null })
+  const statuses = await Promise.all([
+    handleLibrary(await requestFor('/api/books', serviceToken), testEnv()),
+    handleLibrary(
+      await requestFor(`/api/books/${'a'.repeat(64)}`, serviceToken),
+      testEnv(),
+    ),
+  ])
+  assert.deepEqual(
+    statuses.map(({ status }) => status),
+    [403, 403],
   )
 })
 
