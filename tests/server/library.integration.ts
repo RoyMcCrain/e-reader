@@ -81,7 +81,7 @@ const env = () =>
     ACCESS_ALLOWED_EMAIL: 'me@rrrr.dev',
   }) as LibraryEnv
 
-test('lists private records and streams exact R2 bytes with safe headers', async () => {
+void test('lists private records and streams exact R2 bytes with safe headers', async () => {
   const listing = await handleLibrary(
     await authorizedRequest('/api/books'),
     env(),
@@ -105,7 +105,7 @@ test('lists private records and streams exact R2 bytes with safe headers', async
   assert.equal(download.headers.get('X-Content-Type-Options'), 'nosniff')
 })
 
-test('whitelists manifest fields and only serves manifest-listed IDs', async () => {
+void test('whitelists manifest fields and only serves manifest-listed IDs', async () => {
   await bucket.put(
     'library.json',
     JSON.stringify({ books: [{ ...records[0], hidden: 'private metadata' }] }),
@@ -134,7 +134,7 @@ test('whitelists manifest fields and only serves manifest-listed IDs', async () 
   await bucket.put('library.json', JSON.stringify({ books: records }))
 })
 
-test('returns private service-unavailable response when the listed body lookup rejects', async () => {
+void test('returns private service-unavailable response when the listed body lookup rejects', async () => {
   const failingEnv = env()
   const originalGet = failingEnv.BOOKS.get.bind(failingEnv.BOOKS)
   failingEnv.BOOKS = {
@@ -152,7 +152,7 @@ test('returns private service-unavailable response when the listed body lookup r
   assert.equal(result.headers.get('X-Content-Type-Options'), 'nosniff')
 })
 
-test('returns safe errors for missing object, invalid manifest and wrong methods', async () => {
+void test('returns safe errors for missing object, invalid manifest and wrong methods', async () => {
   await bucket.delete(`books/${ids[0]}.epub`)
   const missing = await handleLibrary(
     await authorizedRequest(`/api/books/${ids[0]}`),

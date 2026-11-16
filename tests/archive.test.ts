@@ -31,7 +31,7 @@ describe('ZIP画像順序', () => {
       }
     } as typeof original
     try {
-      await expect(
+      expect(
         openImageArchive(new File([new Uint8Array()], 'bounded.zip')),
       ).rejects.toThrow('上限を超えています')
       expect(requested).toBe(5001)
@@ -51,7 +51,7 @@ describe('ZIP画像順序', () => {
       if (second.every((byte, index) => bytes[offset + index] === byte))
         bytes.set(first, offset)
     }
-    await expect(
+    expect(
       openImageArchive(new File([bytes], 'duplicate.zip')),
     ).rejects.toThrow('重複した画像項目')
   })
@@ -92,7 +92,7 @@ describe('ZIP画像順序', () => {
       expect(first).toBe(duplicate)
       expect(created).toEqual([first])
       await archive.close()
-      await expect(archive.getUrl(0)).rejects.toThrow('閉じられています')
+      expect(archive.getUrl(0)).rejects.toThrow('閉じられています')
     } finally {
       URL.createObjectURL = create
     }
@@ -192,7 +192,7 @@ describe('ZIP画像順序', () => {
         'blob:test-2',
         'blob:test-3',
       ])
-      await expect(archive.getUrl(4)).rejects.toThrow('閉じられています')
+      expect(archive.getUrl(4)).rejects.toThrow('閉じられています')
     } finally {
       URL.createObjectURL = create
       URL.revokeObjectURL = revoke

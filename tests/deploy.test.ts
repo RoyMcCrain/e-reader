@@ -49,7 +49,7 @@ const runDeploy = async (
   }
 }
 
-test('deploys using service credentials without a human token', async () => {
+void test('deploys using service credentials without a human token', async () => {
   const result = await runDeploy({
     CLOUDFLARE_API_TOKEN: 'management-token',
     CF_ACCESS_CLIENT_ID: 'service-id',
@@ -60,7 +60,7 @@ test('deploys using service credentials without a human token', async () => {
   assert.equal(result.calls, '--no-install void deploy --platform cloudflare\n')
 })
 
-test('missing required credentials fail before deployment, even with old token', async () => {
+void test('missing required credentials fail before deployment, even with old token', async () => {
   for (const missing of [
     'CLOUDFLARE_API_TOKEN',
     'CF_ACCESS_CLIENT_ID',
@@ -81,7 +81,7 @@ test('missing required credentials fail before deployment, even with old token',
   }
 })
 
-test('propagates deployment failure', async () => {
+void test('propagates deployment failure', async () => {
   const result = await runDeploy(
     {
       CLOUDFLARE_API_TOKEN: 'management-token',

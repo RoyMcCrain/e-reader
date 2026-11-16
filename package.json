@@ -6,15 +6,16 @@
     "#*": "./src/*"
   },
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0",
-    "typecheck": "tsc --noEmit",
+    "dev": "./node_modules/.bin/node ./node_modules/vite/bin/vite.js --host 0.0.0.0",
+    "build": "./node_modules/.bin/node ./node_modules/vite/bin/vite.js build",
+    "preview": "./node_modules/.bin/node ./node_modules/vite/bin/vite.js preview --host 0.0.0.0",
+    "typecheck": "bunx --bun --no-install tsc --noEmit",
     "test": "bun test",
-    "test:e2e": "playwright test",
-    "test:server": "node --test tests/server/*.integration.ts",
-    "lint": "eslint .",
-    "format": "prettier --write ."
+    "test:e2e": "bunx --bun --no-install playwright test",
+    "test:server": "./node_modules/.bin/node --test tests/server/*.integration.ts",
+    "lint": "bunx --bun --no-install oxlint . --type-aware",
+    "format": "bunx --bun --no-install oxfmt --write .",
+    "format:check": "bunx --bun --no-install oxfmt --check ."
   },
   "dependencies": {
     "@tanstack/react-router": "^1.169.5",
@@ -31,13 +32,13 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "6.3.0",
-    "eslint": "^9.0.0",
     "miniflare": "5.20261110.1-beta",
-    "node": "24.22.0",
+    "node": "26.13.1",
     "oxc-transform-react": "^0.158.0",
-    "prettier": "^3.0.0",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
+    "oxlint-tsgolint": "7.0.2007",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.72.2",
     "vite": "8.3.8",
     "void": "1.9.1"
   }

@@ -4,15 +4,16 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 
 ## 開発
 
-- Bun をパッケージ管理・スクリプト実行に使用します。`bun install`
+- Bun 1.4.4 をパッケージ管理、ユニットテスト、型検査・lint・format・Playwright runnerに使用します。`bun install`
+- Cloudflare/Vite の開発・build・preview、Void CLI、実R2サーバー統合テストは Node.js 26.13.1 で実行します。Void 1.9.1 のNode 26系の要件（26.12以上）を満たす版を `node` パッケージで固定し、CIも同じ版です。
 - ソース内の参照は `#components/...`・`#lib/...` など、`src` 基準の import に統一します。実行時は `package.json` の `imports`、拡張子なしの型解決は `tsconfig.json` の `paths` で同じ `#*` → `./src/*` を設定しています。Nodeで直接実行する参照は `.ts` を付け、自動生成ファイルとブラウザー内評価の `/src/...` URLは変更しません。
-- Void 1.9.1 が要求する Node.js（`^24.22.0 || >=26.12.0`）に合わせ、24.22.0 を `node` パッケージでプロジェクト内に用意します。Cloudflare workerd は Bun で代用できません。
+- Workers の実行環境は Cloudflare workerd です。Bun 1.4.4 の組み込みundiciはCloudflare開発サーバーとMiniflareのホスト側R2ストリーム処理に必要な互換性を満たさないため、これらのホスト処理にはNodeを使用します。
 - `bun run dev --host 0.0.0.0`（開発サーバー）
-- `bun run typecheck`, `bun run lint`, `bun test`
+- `bun run typecheck`、`bun run lint`（Oxlint + oxlint-tsgolint の型対応 no-floating-promises / await-thenable）、`bun run format`（Oxfmtで整形）、`bun run format:check`（整形の確認）、`bun run test`
 - サーバー統合テスト: `bun run test:server`。実際のMiniflare R2と署名付きJWTを使用します。Miniflare 5のR2ストリーム処理はBunではなく、プロジェクトのNode.jsで検証します。
-- ブラウザテスト初回: `bunx playwright install chromium`、実行: `bun run test:e2e`
+- ブラウザテスト初回: `bunx --bun --no-install playwright install chromium`、実行: `bun run test:e2e`。Playwright runner/workers は Bun、Playwright が起動する Vite webServer はNode 26.13.1です。デスクトップ／モバイル／native各プロジェクトで検証します。
 - `bun run build`、本番ビルドのローカル確認: `bun run preview`（既定 `http://localhost:4173`）
-- デプロイ: `bunx void deploy --platform cloudflare`。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
+- デプロイ: `bunx --no-install void deploy --platform cloudflare`。Void CLIはプロジェクト内のNodeで起動します。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
 
 スマホから開く場合は同じネットワークの PC の IP アドレスと開発サーバーのポートを指定します。OS のファイアウォールや WSL の設定によってはポート転送が必要です。
 
@@ -48,18 +49,18 @@ EPUB は現在のページが指に追従し、短いスワイプや中断時に
 cloudflared access login --quiet https://reader.rrrr.dev/__void/ready
 CF_ACCESS_TOKEN="$(cloudflared access token --app=https://reader.rrrr.dev/__void/ready)" \
 CF_ACCESS_READINESS_ORIGIN="https://reader.rrrr.dev" \
-bunx void deploy --platform cloudflare
+bunx --no-install void deploy --platform cloudflare
 ```
 
 readiness専用アプリの認証はデプロイ時の準備確認だけに使われます。ルートアプリと `/api/books` は引き続き所有者のみです。CIのサービス認証情報を人に渡さず、手動デプロイは所有者の対話ログインで行います。
 
-Cloudflare管理用のログイン（`bunx void cloudflare login`）と、アプリのAccessログインは別です。初回や別の環境では `bunx void connect --platform cloudflare` で管理CLIの接続先も保存してください。LinuxではVoidのブラウザーログインに利用可能なOS keyringが必要です。
+Cloudflare管理用のログイン（`bunx --no-install void cloudflare login`）と、アプリのAccessログインは別です。初回や別の環境では `bunx --no-install void connect --platform cloudflare` で管理CLIの接続先も保存してください。LinuxではVoidのブラウザーログインに利用可能なOS keyringが必要です。
 
-初回の公開URLなしデプロイでは、Workerが作成済みでもURLを確認できずCLIが停止する場合があります。接続先を設定したうえで `void project status` を確認し、Access保護済みの `reader.rrrr.dev` を `void domain add reader.rrrr.dev` で接続します。現在のルートは `void.config.ts` と `void.lock.json` に保存しています。再デプロイのためにAccessを無効にしないでください。
+初回の公開URLなしデプロイでは、Workerが作成済みでもURLを確認できずCLIが停止する場合があります。接続先を設定したうえで `bunx --no-install void project status` を確認し、Access保護済みの `reader.rrrr.dev` を `bunx --no-install void domain add reader.rrrr.dev` で接続します。現在のルートは `void.config.ts` と `void.lock.json` に保存しています。再デプロイのためにAccessを無効にしないでください。
 
 ## GitHub Actions CI/CD
 
-- CIは `main` 向けの pull request、`main` への push、および手動実行で動きます。Node.js 24.22.0 / Bun 1.4.4 を使い、依存関係の凍結インストール、Void型生成、型検査、lint、Prettier確認、ユニット・サーバー統合テスト、ChromiumによるPlaywright（デスクトップ／モバイル両プロジェクト）、ビルドを検証します。
+- CIは `main` 向けの pull request、`main` への push、および手動実行で動きます。Node.js 26.13.1 / Bun 1.4.4 を使い、依存関係の凍結インストール、Void型生成、型検査、Oxlint、Oxfmt確認、ユニット・サーバー統合テスト、ChromiumによるPlaywright（デスクトップ／モバイル／native各プロジェクト）、ビルドを検証します。
 - `main` へのpush（PRのマージを含む）で、全CI成功後に production Environment を使って本番へ自動デプロイします。Actionsから `main` を選んで `workflow_dispatch` を手動実行することもできます。PRや他ブランチではデプロイしません。Void CLIが `CF_ACCESS_READINESS_ORIGIN` の `/__void/ready` を確認し、失敗時はデプロイを失敗させます。CIは `/api/books` にアクセスしません。
 - 本番配信は直列化し、後続のpushで進行中の配信をキャンセルしません。古いPRの検証だけをキャンセルします。
 - GitHubリポジトリの Settings → Environments で `production` を作成し、Deployment branches and tags を `main` のみに制限してください。必要なら required reviewers も設定してください。ワークフローからEnvironmentが自動作成されても、保護ルールやsecretsは設定されません。デプロイ前に設定を完了してください。

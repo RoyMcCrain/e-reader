@@ -77,7 +77,7 @@ const requestFor = async (path: string, token?: string) => {
 const testEnv = (overrides: Partial<LibraryEnv> = {}) =>
   ({ ...envValues, BOOKS: bucket, ...overrides }) as LibraryEnv
 
-test('requires verified JWT and does not trust a spoofed email header', async () => {
+void test('requires verified JWT and does not trust a spoofed email header', async () => {
   const valid = await handleLibrary(
     await requestFor('/api/books', await tokenFor()),
     testEnv(),
@@ -107,7 +107,7 @@ test('requires verified JWT and does not trust a spoofed email header', async ()
   assert.equal(spoofed.status, 401)
 })
 
-test('rejects wrong identity, expired token, audience and issuer', async () => {
+void test('rejects wrong identity, expired token, audience and issuer', async () => {
   const now = Math.floor(Date.now() / 1000)
   const statuses = await Promise.all([
     handleLibrary(
@@ -139,7 +139,7 @@ test('rejects wrong identity, expired token, audience and issuer', async () => {
   )
 })
 
-test('service-style JWT without owner email cannot list or download books', async () => {
+void test('service-style JWT without owner email cannot list or download books', async () => {
   const serviceToken = await tokenFor({ email: null })
   const statuses = await Promise.all([
     handleLibrary(await requestFor('/api/books', serviceToken), testEnv()),
@@ -154,7 +154,7 @@ test('service-style JWT without owner email cannot list or download books', asyn
   )
 })
 
-test('fails closed when required environment is absent', async () => {
+void test('fails closed when required environment is absent', async () => {
   const response = await handleLibrary(
     await requestFor('/api/books', await tokenFor()),
     testEnv({ ACCESS_AUD: undefined }),

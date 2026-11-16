@@ -7,9 +7,7 @@ describe('awaitWithAbort', () => {
     controller.abort()
     const rejection = Promise.reject(new Error('late rejection'))
 
-    await expect(
-      awaitWithAbort(rejection, controller.signal),
-    ).rejects.toMatchObject({
+    expect(awaitWithAbort(rejection, controller.signal)).rejects.toMatchObject({
       name: 'AbortError',
     })
     await new Promise((resolve) => setTimeout(resolve, 0))

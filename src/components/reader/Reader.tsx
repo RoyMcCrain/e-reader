@@ -21,7 +21,8 @@ import styles from '#components/reader/Reader.module.css'
 
 type Archive = Awaited<ReturnType<typeof openImageArchive>>
 type Session =
-  { kind: 'zip'; archive: Archive } | { kind: 'epub'; epub: EpubSession }
+  | { kind: 'zip'; archive: Archive }
+  | { kind: 'epub'; epub: EpubSession }
 interface ReaderProps {
   file: File
   settings: ReaderSettings
