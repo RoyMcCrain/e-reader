@@ -24,7 +24,6 @@
   margin-left: auto;
 }
 .toolbar button,
-.footer button,
 .tocDialog button {
   min-width: 44px;
   min-height: 44px;
@@ -39,17 +38,14 @@
   font: inherit;
 }
 .toolbar button:hover:not(:disabled),
-.footer button:hover:not(:disabled),
 .tocDialog button:hover {
   background: #e9ecdf;
 }
-.toolbar button:disabled,
-.footer button:disabled {
+.toolbar button:disabled {
   opacity: 0.35;
   cursor: default;
 }
 .toolbar button:focus-visible,
-.footer button:focus-visible,
 .tocDialog button:focus-visible {
   outline: 2px solid #52694e;
   outline-offset: 2px;
@@ -66,21 +62,12 @@
   box-sizing: border-box;
   flex: none;
   display: grid;
-  grid-template-columns: auto minmax(0, 320px) auto;
+  grid-template-columns: minmax(0, 320px);
   justify-content: center;
   align-items: center;
-  gap: clamp(4px, 2vw, 16px);
   padding: 4px 8px;
   border-top: 1px solid #e2dfd5;
   background: #f6f3eb;
-}
-.footer button {
-  flex-shrink: 0;
-  padding: 0;
-  white-space: nowrap;
-}
-.footer button:last-of-type {
-  justify-self: end;
 }
 .progress {
   min-width: 0;

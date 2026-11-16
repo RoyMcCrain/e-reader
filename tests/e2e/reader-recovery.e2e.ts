@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { turnPage } from './reader-actions'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
 const forceSingleSpread = async (page: import('@playwright/test').Page) => {
@@ -35,7 +36,7 @@ const makeArchive = async () => {
   return Buffer.from(await (await writer.close()).arrayBuffer())
 }
 
-test('an invalid file keeps its fatal alert and disables navigation', async ({
+test('an invalid file keeps its fatal alert without reader page input', async ({
   page,
 }) => {
   await page.goto('/')
@@ -49,11 +50,10 @@ test('an invalid file keeps its fatal alert and disables navigation', async ({
   await expect(
     page.getByRole('progressbar', { name: '読書の進捗' }),
   ).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '前へ' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: '次へ' })).toBeDisabled()
+  await expect(page.locator('footer button')).toHaveCount(0)
 })
 
-test('a corrupt image alerts but toolbar navigation recovers on a valid page', async ({
+test('a corrupt image alerts and page input recovers on a valid page', async ({
   page,
 }) => {
   await forceSingleSpread(page)
@@ -68,10 +68,10 @@ test('a corrupt image alerts but toolbar navigation recovers on a valid page', a
   await expect(page.getByRole('alert')).toHaveText(
     '画像を読み込めませんでした。',
   )
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect(page.getByRole('img', { name: '画像 2 / 2' })).toBeVisible()
   await expect(page.getByRole('alert')).toHaveCount(0)
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, false)
   await expect(page.getByRole('alert')).toHaveText(
     '画像を読み込めませんでした。',
   )

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { turnPage } from './reader-actions'
 import { deflateSync } from 'node:zlib'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
@@ -135,10 +136,10 @@ test('cover preference presents only the first ZIP image and returns to ordinary
       return [box.left + box.width / 2, stage.left + stage.width / 2]
     })
   expect(Math.abs(centers[0] - centers[1])).toBeLessThan(3)
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect(page.getByRole('img', { name: '画像 2 / 5' })).toBeVisible()
   await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, false)
   await expect(page.getByRole('img', { name: '画像 1 / 5' })).toBeVisible()
   await expect(page.getByRole('img', { name: '画像 2 / 5' })).toHaveCount(0)
 })
@@ -149,7 +150,7 @@ test('cover mode does not skip the first body image when enabled on a later spre
   await page.setViewportSize({ width: 1100, height: 850 })
   await settings(page, 'double')
   await loadBook(page)
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
   await page.getByRole('button', { name: '設定' }).click()
   await page
@@ -157,10 +158,10 @@ test('cover mode does not skip the first body image when enabled on a later spre
     .check()
   await page.getByRole('button', { name: '読書に戻る' }).click()
   await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, false)
   await expect(page.getByRole('img', { name: '画像 2 / 5' })).toBeVisible()
   await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, false)
   await expect(page.getByRole('img', { name: '画像 1 / 5' })).toBeVisible()
   await expect(page.getByRole('img', { name: '画像 2 / 5' })).toHaveCount(0)
 })
@@ -180,7 +181,7 @@ test('auto spread responds to content width without changing the current lead', 
     '24px',
   )
   await expect(page.locator('[class*="imagePair"]')).toHaveCSS('gap', '28px')
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
   await expect(page.getByRole('img', { name: '画像 4 / 5' })).toBeVisible()
   await expectImageColor(page, 3, [20, 40, 220])
@@ -208,9 +209,11 @@ test('auto spread responds to content width without changing the current lead', 
   expect(dimensions.natural).toEqual([400, 600])
   expect(dimensions.source).toContain('blob:')
   expect(dimensions.rendered[0]).toBeGreaterThan(dimensions.natural[0])
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect(page.getByRole('img', { name: '画像 5 / 5' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '次へ' })).toBeDisabled()
+  await turnPage(page, true)
+  await expect(page.getByRole('img', { name: '画像 5 / 5' })).toBeVisible()
+  await expect(page.getByRole('img')).toHaveCount(1)
   const finalImage = await page
     .getByRole('img', { name: '画像 5 / 5' })
     .evaluate(async (image: HTMLImageElement) => {
@@ -286,13 +289,14 @@ test('rapid turns followed by a resize keep the newest lead', async ({
   await page.setViewportSize({ width: 1100, height: 850 })
   await settings(page, 'auto')
   await loadBook(page)
-  const next = page.getByRole('button', { name: '次へ' })
-  await Promise.all([next.click(), next.click()])
+  await Promise.all([turnPage(page, true), turnPage(page, true)])
   await expect(page.getByRole('img', { name: '画像 5 / 5' })).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('img', { name: '画像 5 / 5' })).toBeVisible()
   await expect(page.getByRole('img', { name: '画像 4 / 5' })).toHaveCount(0)
-  await expect(next).toBeDisabled()
+  await turnPage(page, true)
+  await expect(page.getByRole('img', { name: '画像 5 / 5' })).toBeVisible()
+  await expect(page.getByRole('img')).toHaveCount(1)
 })
 
 test('explicit single and double settings determine image count', async ({

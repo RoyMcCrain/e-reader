@@ -444,12 +444,13 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
           notify()
           return
         }
-        if (
-          forward &&
+        const fixed = book?.rendition.layout === 'pre-paginated'
+        const peerAtEnd =
           panes[1].wrapper.style.visibility !== 'hidden' &&
-          rendererOf(panes[1]).atEnd
-        )
-          return
+          (fixed
+            ? nextSection(book!, sectionIndex(book!, panes[1]), 1) === undefined
+            : rendererOf(panes[1]).atEnd)
+        if (forward && peerAtEnd) return
         if (book?.rendition.layout === 'pre-paginated') {
           const direction = forward ? 1 : -1
           const current = sectionIndex(book, panes[0])

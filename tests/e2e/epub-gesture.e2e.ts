@@ -1,4 +1,5 @@
 import { expect, test, type Browser } from '@playwright/test'
+import { turnPage } from './reader-actions'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 
 type Direction = 'ltr' | 'rtl'
@@ -143,11 +144,9 @@ for (const direction of ['ltr', 'rtl'] as const) {
       .poll(async () => (await state(page)).map((pane) => pane.transform))
       .toEqual(['none', 'none'])
     const settled = await state(page)
-    const next = page.getByRole('button', { name: '次へ' })
-    const previous = page.getByRole('button', { name: '前へ' })
     let reference = settled.map((pane) => pane.cfi)
     for (let turn = 0; turn < 2; turn++) {
-      await next.click()
+      await turnPage(page, true)
       await expect
         .poll(async () => (await state(page)).map((pane) => pane.cfi))
         .not.toEqual(reference)
@@ -155,7 +154,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     }
     const twoSpreadsAhead = reference
     for (let turn = 0; turn < 2; turn++) {
-      await previous.click()
+      await turnPage(page, false)
       await expect
         .poll(async () => (await state(page)).map((pane) => pane.cfi))
         .not.toEqual(reference)
@@ -270,11 +269,9 @@ for (const direction of ['ltr', 'rtl'] as const) {
       beforeState.map((pane) => pane.transform),
     )
     await page.getByRole('button', { name: '読書に戻る' }).click()
-    const next = page.getByRole('button', { name: '次へ' })
-    const previous = page.getByRole('button', { name: '前へ' })
-    await next.click()
+    await turnPage(page, true)
     const expectedOneTurn = (await state(page)).map((pane) => pane.cfi)
-    await previous.click()
+    await turnPage(page, false)
     await expect
       .poll(async () => (await state(page)).map((pane) => pane.cfi))
       .toEqual(before)
@@ -363,8 +360,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
       before.map((pane) => pane.cfi),
     )
 
-    const next = page.getByRole('button', { name: '次へ' })
-    while (!(await state(page))[0].atEnd) await next.click()
+    while (!(await state(page))[0].atEnd) await turnPage(page, true)
     const final = await state(page)
     const dx = direction === 'ltr' ? -90 : 90
     await dispatchSwipe(page, x, y, dx)

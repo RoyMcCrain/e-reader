@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { turnPage } from './reader-actions'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 import { collapse } from 'foliate-js/epubcfi.js'
 
@@ -97,12 +98,11 @@ for (const direction of ['ltr', 'rtl'] as const) {
         .toBe(marginLeft)
       await flushLayout()
     }
-    const next = page.getByRole('button', { name: '次へ' })
     for (let index = 0; index < 6; index++) {
       const previous = await view.evaluate(
         (el) => (el as PositionView).lastLocation?.cfi,
       )
-      await next.click()
+      await turnPage(page, true)
       await expect
         .poll(() =>
           view.evaluate((el) => (el as PositionView).lastLocation?.cfi),
@@ -184,7 +184,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     const beforeSecondVisit = await view.evaluate(
       (el) => (el as PositionView).lastLocation?.cfi,
     )
-    await next.click()
+    await turnPage(page, true)
     await expect
       .poll(() => view.evaluate((el) => (el as PositionView).lastLocation?.cfi))
       .not.toBe(beforeSecondVisit)
@@ -231,7 +231,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     const previousLocation = await view.evaluate(
       (el) => (el as PositionView).lastLocation?.cfi,
     )
-    for (let index = 0; index < 6; index++) await next.click()
+    for (let index = 0; index < 6; index++) await turnPage(page, true)
     await expect
       .poll(() => view.evaluate((el) => (el as PositionView).lastLocation?.cfi))
       .not.toBe(previousLocation)
