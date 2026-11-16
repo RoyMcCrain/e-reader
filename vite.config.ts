@@ -4,5 +4,5 @@ import { defineConfig } from 'vite'
 import { voidPlugin } from 'void'
 
 export default defineConfig({
-  plugins: [voidPlugin(), tanstackStart(), react({ compiler: true })],
+	plugins: [voidPlugin(), tanstackStart(), react({ compiler: true })],
 })

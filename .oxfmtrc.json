@@ -1,10 +1,12 @@
 {
-  "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "singleQuote": true,
-  "semi": false,
-  "trailingComma": "all",
-  "printWidth": 80,
-  "sortImports": false,
-  "sortPackageJson": false,
-  "ignorePatterns": ["src/routeTree.gen.ts", "bun.lock"]
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"singleQuote": true,
+	"semi": false,
+	"trailingComma": "all",
+	"printWidth": 80,
+	"useTabs": true,
+	"tabWidth": 2,
+	"sortImports": { "sortSideEffects": false },
+	"sortPackageJson": { "sortScripts": true },
+	"ignorePatterns": ["src/routeTree.gen.ts", "bun.lock"]
 }
