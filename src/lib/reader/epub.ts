@@ -535,7 +535,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
       settings = nextSettings
       columns = nextColumns
       return enqueue(async () => {
-        panes.forEach((pane) => setPaneStyles(pane, settings))
+        // Foliate's deferred style callbacks must not target a discarded peer.
+        panes.slice(0, columns).forEach((pane) => setPaneStyles(pane, settings))
         await layout(true)
       })
     },

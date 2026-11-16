@@ -796,6 +796,9 @@ test('fixed-layout cover mode keeps the first body page reachable from page thre
 test('resize rebuilds the EPUB spread layout and peer pane', async ({
   page,
 }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1280, height: 900 })
   await page.addInitScript(() =>
     localStorage.setItem(
       'shiori.reader.settings.v1',
@@ -829,6 +832,7 @@ test('resize rebuilds the EPUB spread layout and peer pane', async ({
       ),
     )
     .toBe(true)
+  expect(errors).toEqual([])
 })
 
 test('EPUB typography settings override publisher metrics in the rendered layout', async ({
