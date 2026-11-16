@@ -1,6 +1,8 @@
 import { expect, test, devices } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
+import { expectChromeHiddenImmediately } from './reader-actions'
+
 test.use({ ...devices['Pixel 7'] })
 
 const forceSingleSpread = async (page: import('@playwright/test').Page) => {
@@ -42,6 +44,8 @@ test('a ZIP swipe animates the incoming page in its travel direction', async ({
 		buffer: Buffer.from(archive),
 	})
 	await expect(page.getByRole('img', { name: '画像 1 / 2' })).toBeVisible()
+	await expect(page.locator('header')).toHaveCSS('opacity', '1')
+	await expect(page.locator('footer')).toHaveCSS('opacity', '1')
 	const cdp = await page.context().newCDPSession(page)
 	await cdp.send('Input.dispatchTouchEvent', {
 		type: 'touchStart',
@@ -55,22 +59,25 @@ test('a ZIP swipe animates the incoming page in its travel direction', async ({
 		type: 'touchEnd',
 		touchPoints: [],
 	})
-	await expect(page.getByRole('img', { name: '画像 2 / 2' })).toBeVisible()
-	await expect
-		.poll(() =>
-			page.locator('[class*="imagePair"]').evaluate((pair) =>
-				pair.getAnimations().some((animation) => {
-					const frames = (
-						animation.effect as KeyframeEffect | null
-					)?.getKeyframes()
-					const transform = frames?.[0]?.transform
-					return (
-						typeof transform === 'string' &&
-						/translateX\(32px\)/.test(transform)
-					)
-				}),
-			),
-		)
-		.toBe(true)
+	await Promise.all([
+		expectChromeHiddenImmediately(page),
+		expect(page.getByRole('img', { name: '画像 2 / 2' })).toBeVisible(),
+		expect
+			.poll(() =>
+				page.locator('[class*="imagePair"]').evaluate((pair) =>
+					pair.getAnimations().some((animation) => {
+						const frames = (
+							animation.effect as KeyframeEffect | null
+						)?.getKeyframes()
+						const transform = frames?.[0]?.transform
+						return (
+							typeof transform === 'string' &&
+							/translateX\(32px\)/.test(transform)
+						)
+					}),
+				),
+			)
+			.toBe(true),
+	])
 	await cdp.detach()
 })

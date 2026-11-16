@@ -15,6 +15,7 @@ import {
 
 import { Icon } from '#components/reader/Icon'
 import { ReaderProgress } from '#components/reader/ReaderProgress'
+import { useReaderChrome } from '#components/reader/useReaderChrome'
 import { openImageArchive } from '#lib/reader/archive'
 import { openEpub } from '#lib/reader/epub'
 import type { EpubSession } from '#lib/reader/epub-types'
@@ -445,6 +446,8 @@ interface ReaderControlsProps {
 	indices: number[]
 	progress: number
 	direction: 'ltr' | 'rtl'
+	headerVisible: boolean
+	footerVisible: boolean
 	title: string
 	dialog: React.RefObject<HTMLDialogElement | null>
 	closeToc: () => void
@@ -471,9 +474,13 @@ const ReaderControls = ({
 	indices,
 	progress,
 	direction,
+	headerVisible,
+	footerVisible,
 }: ReaderControlsProps) => (
 	<>
-		<header className={styles.toolbar}>
+		<header
+			className={`${styles.toolbar} ${headerVisible ? '' : styles.hidden}`}
+		>
 			<button aria-label="本を閉じる" title="本を閉じる" onClick={onClose}>
 				<Icon name="close" />
 			</button>
@@ -498,7 +505,10 @@ const ReaderControls = ({
 			</div>
 		</header>
 		{children}
-		<footer className={styles.footer} dir={direction}>
+		<footer
+			className={`${styles.footer} ${footerVisible ? '' : styles.hidden}`}
+			dir={direction}
+		>
 			<ReaderProgress
 				count={count}
 				currentIndex={currentIndex}
@@ -579,6 +589,12 @@ export const Reader = ({
 	const [error, setError] = useState('')
 	const [loading, setLoading] = useState(true)
 	const [hasSession, setHasSession] = useState(false)
+	const pinned = loading || Boolean(error) || showToc
+	const { headerVisible, footerVisible } = useReaderChrome({
+		active,
+		file,
+		pinned,
+	})
 
 	const refs = useMemo<ZipRefs>(
 		() => ({
@@ -700,6 +716,8 @@ export const Reader = ({
 				indices={indices}
 				progress={progress}
 				direction={direction}
+				headerVisible={headerVisible}
+				footerVisible={footerVisible}
 				title={title}
 				dialog={tocDialog}
 				closeToc={() => setShowToc(false)}

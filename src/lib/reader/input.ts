@@ -2,9 +2,19 @@ import type { FoliateViewElement } from 'foliate-js/view.js'
 
 import { bindEpubSwipe } from '#lib/reader/epub-swipe'
 
+export const READER_ACTIVITY_EVENT = 'reader-activity'
+export const READER_TURN_EVENT = 'reader-turn'
+
 type Direction = 'rtl' | 'ltr'
 type Turn = (next: boolean, swipeDirection?: 'left' | 'right') => void
 type Point = { x: number; y: number }
+
+const notifyTurn =
+	(host: HTMLElement, turn: Turn): Turn =>
+	(next, swipeDirection) => {
+		host.dispatchEvent(new Event(READER_TURN_EVENT, { bubbles: true }))
+		turn(next, swipeDirection)
+	}
 
 const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
 	let start: Point | null = null
@@ -183,8 +193,13 @@ const bindEpubClick = (
 		if (!frame || !FrameElement || !(frame instanceof FrameElement)) return
 		const x = event.clientX + frame.getBoundingClientRect().left
 		const rect = host.getBoundingClientRect()
-		if (x < rect.left + rect.width * 0.22) turn(direction === 'rtl')
-		else if (x > rect.right - rect.width * 0.22) turn(direction !== 'rtl')
+		if (x < rect.left + rect.width * 0.22) {
+			event.preventDefault()
+			turn(direction === 'rtl')
+		} else if (x > rect.right - rect.width * 0.22) {
+			event.preventDefault()
+			turn(direction !== 'rtl')
+		}
 	}
 	doc.addEventListener('click', click)
 	return () => doc.removeEventListener('click', click)
@@ -195,16 +210,21 @@ export const bindHostInput = (
 	direction: Direction,
 	turn: Turn,
 ) => {
+	const notify = notifyTurn(host, turn)
 	const removeSwipe = host.querySelector('foliate-view')
 		? () => undefined
-		: bindSwipe(host, direction, turn)
-	const removeKeys = bindKeys(host.ownerDocument, direction, turn)
+		: bindSwipe(host, direction, notify)
+	const removeKeys = bindKeys(host.ownerDocument, direction, notify)
 	const click = (event: MouseEvent) => {
 		if (ignoredClick(event) || hasSelection(host.ownerDocument)) return
 		const rect = host.getBoundingClientRect()
-		if (event.clientX < rect.left + rect.width * 0.22) turn(direction === 'rtl')
-		else if (event.clientX > rect.right - rect.width * 0.22)
-			turn(direction !== 'rtl')
+		if (event.clientX < rect.left + rect.width * 0.22) {
+			event.preventDefault()
+			notify(direction === 'rtl')
+		} else if (event.clientX > rect.right - rect.width * 0.22) {
+			event.preventDefault()
+			notify(direction !== 'rtl')
+		}
 	}
 	host.addEventListener('click', click)
 	return () => {
@@ -221,16 +241,34 @@ export const bindEpubInput = (
 	turn: Turn,
 ) => {
 	const docs = new Map<Document, () => void>()
-	const swipe = bindEpubSwipe(view, host, direction, turn)
+	const notify = notifyTurn(host, turn)
+	const swipe = bindEpubSwipe(view, host, direction, notify)
 	const bind = (doc: Document) => {
 		if (docs.has(doc)) return
 		// The parent touch-action does not apply inside the EPUB iframe.
 		doc.documentElement.style.touchAction = 'pinch-zoom'
 		doc.body.style.touchAction = 'pinch-zoom'
-		const removeKeys = bindKeys(doc, direction, turn)
-		const removeClick = bindEpubClick(doc, host, direction, turn)
+		const activity = () =>
+			host.dispatchEvent(new Event(READER_ACTIVITY_EVENT, { bubbles: true }))
+		const pointerMove = (event: PointerEvent) => {
+			if (event.pointerType !== 'touch') activity()
+		}
+		doc.addEventListener('pointermove', pointerMove, {
+			capture: true,
+			passive: true,
+		})
+		doc.addEventListener('keydown', activity, true)
+		const removeKeys = bindKeys(doc, direction, notify)
+		const removeClick = bindEpubClick(doc, host, direction, notify)
+		const clickActivity = (event: MouseEvent) => {
+			if (!event.defaultPrevented) activity()
+		}
+		doc.addEventListener('click', clickActivity)
 		const removeSwipe = swipe.attach(doc)
 		docs.set(doc, () => {
+			doc.removeEventListener('pointermove', pointerMove, true)
+			doc.removeEventListener('keydown', activity, true)
+			doc.removeEventListener('click', clickActivity)
 			removeKeys()
 			removeClick()
 			removeSwipe()
