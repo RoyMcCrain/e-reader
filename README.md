@@ -35,15 +35,17 @@ bun run test:e2e
 
 ## Mutation testing
 
-AI 生成テストを含む reader のユニットテストが、実際のコード変更を検出できるかを StrykerJS で確認します。対象は `src/lib/reader/layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts` です。
+reader のユニットテストと、認証・書庫 API の server ユニットテストが、実際のコード変更を検出できるかを StrykerJS で確認します。対象は `src/lib/reader/layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts` と `src/server/access.ts`、`library.ts` です。
 
 ```bash
 bun run test:mutation
 # 1 モジュールに絞る例
 bun run test:mutation --mutate src/lib/reader/layout.ts
+# server の認証・書庫 API だけを対象にする例
+bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
 ```
 
-各 mutant ごとに command runner が Bun で reader のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。E2E と server テストは含まず、通常の test や CI には mutation testing の自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
+各 mutant ごとに command runner が Bun で reader と server のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。server のユニットテストは高速な Bun テストで、Node.js/Miniflare を使う既存の `tests/server/*.integration.ts` 統合テスト（`bun run test:server`）とは別に保持しています。Mutation testing は統合テストや E2E を実行せず、通常の test や CI に自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
 
 `Survived` は、挙動を検証するテストが不足していないか、または等価 mutant ではないかを調査する手掛かりです。Mutation score だけでテスト品質は保証されず、100% を必須にはしません。
 
