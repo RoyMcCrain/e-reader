@@ -80,6 +80,7 @@ const settings = async (
           marginLeft: margin,
           spread: chosen,
           gutter,
+          firstPageSingle: false,
         }),
       )
     },
@@ -116,6 +117,53 @@ const loadBook = async (page: import('@playwright/test').Page) => {
   await expect(page.getByRole('region', { name: '読書画面' })).toBeVisible()
   await expect(page.getByRole('img', { name: /画像 1/ })).toBeVisible()
 }
+
+test('cover preference presents only the first ZIP image and returns to ordinary spreads', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 850 })
+  await loadBook(page)
+  await expect(page.getByRole('img', { name: '画像 1 / 5' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '画像 2 / 5' })).toHaveCount(0)
+  const centers = await page
+    .getByRole('img', { name: '画像 1 / 5' })
+    .evaluate((image) => {
+      const box = image.getBoundingClientRect()
+      const stage = document
+        .querySelector('[aria-label="読書ページ"]')!
+        .getBoundingClientRect()
+      return [box.left + box.width / 2, stage.left + stage.width / 2]
+    })
+  expect(Math.abs(centers[0] - centers[1])).toBeLessThan(3)
+  await page.getByRole('button', { name: '次へ' }).click()
+  await expect(page.getByRole('img', { name: '画像 2 / 5' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
+  await page.getByRole('button', { name: '前へ' }).click()
+  await expect(page.getByRole('img', { name: '画像 1 / 5' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '画像 2 / 5' })).toHaveCount(0)
+})
+
+test('cover mode does not skip the first body image when enabled on a later spread', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 850 })
+  await settings(page, 'double')
+  await loadBook(page)
+  await page.getByRole('button', { name: '次へ' }).click()
+  await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
+  await page.getByRole('button', { name: '設定' }).click()
+  await page
+    .getByRole('checkbox', { name: /先頭ページを表紙として1枚表示/ })
+    .check()
+  await page.getByRole('button', { name: '読書に戻る' }).click()
+  await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
+  await page.getByRole('button', { name: '前へ' }).click()
+  await expect(page.getByRole('img', { name: '画像 2 / 5' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '画像 3 / 5' })).toBeVisible()
+  await page.getByRole('button', { name: '前へ' }).click()
+  await expect(page.getByRole('img', { name: '画像 1 / 5' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '画像 2 / 5' })).toHaveCount(0)
+})
 
 test('auto spread responds to content width without changing the current lead', async ({
   page,

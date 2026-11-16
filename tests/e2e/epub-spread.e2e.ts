@@ -73,6 +73,50 @@ const makeShortEpub = async (direction: 'ltr' | 'rtl') => {
   return new Uint8Array(await (await writer.close()).arrayBuffer())
 }
 
+const makeBoundaryEpub = async (longFirstSection: boolean) => {
+  const writer = new ZipWriter(new BlobWriter())
+  const text = '<p>本文。</p>'.repeat(500)
+  const sections = [
+    `<html xmlns="http://www.w3.org/1999/xhtml"><body>${longFirstSection ? text : '<p>Cover</p>'}</body></html>`,
+    '<html xmlns="http://www.w3.org/1999/xhtml"><head><style>body{font-size:18px} #page2{break-before:column}</style></head><body><p>Page one.</p><p id="page2">Page two.</p>' +
+      text +
+      '</body></html>',
+  ]
+  const files = {
+    mimetype: 'application/epub+zip',
+    'META-INF/container.xml':
+      '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+    'book.opf':
+      '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">boundary</dc:identifier><dc:title>Boundary</dc:title><dc:language>ja</dc:language></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/></manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>',
+    'a.xhtml': sections[0],
+    'b.xhtml': sections[1],
+    'nav.xhtml':
+      '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol><li><a href="b.xhtml#page2">Second section page two</a></li></ol></nav></body></html>',
+  }
+  for (const [name, content] of Object.entries(files))
+    await writer.add(name, new TextReader(content))
+  return new Uint8Array(await (await writer.close()).arrayBuffer())
+}
+
+const makeCoverChapterEpub = async () => {
+  const writer = new ZipWriter(new BlobWriter())
+  const files: Record<string, string> = {
+    mimetype: 'application/epub+zip',
+    'META-INF/container.xml':
+      '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+    'book.opf':
+      '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">cover-chapters</dc:identifier><dc:title>Cover chapters</dc:title><dc:language>ja</dc:language></metadata><manifest><item id="a" href="A.xhtml" media-type="application/xhtml+xml"/><item id="b" href="B.xhtml" media-type="application/xhtml+xml"/><item id="c" href="C.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/><itemref idref="b"/><itemref idref="c"/></spine></package>',
+    'A.xhtml':
+      '<html xmlns="http://www.w3.org/1999/xhtml"><body>A cover</body></html>',
+    'B.xhtml':
+      '<html xmlns="http://www.w3.org/1999/xhtml"><body>B frontispiece</body></html>',
+    'C.xhtml': `<html xmlns="http://www.w3.org/1999/xhtml"><body>${'<p>C chapter text.</p>'.repeat(500)}</body></html>`,
+  }
+  for (const [name, content] of Object.entries(files))
+    await writer.add(name, new TextReader(content))
+  return new Uint8Array(await (await writer.close()).arrayBuffer())
+}
+
 const makeImageOnlyEpub = async () => {
   const writer = new ZipWriter(new BlobWriter())
   const sections = ['cover', 'frontispiece', 'chapter', 'chapter2']
@@ -184,7 +228,7 @@ for (const scale of [1, 1.25, 1.5, 1.75, 2.625]) {
     await page.addInitScript(() =>
       localStorage.setItem(
         'shiori.reader.settings.v1',
-        JSON.stringify({ spread: 'double' }),
+        JSON.stringify({ spread: 'double', firstPageSingle: false }),
       ),
     )
     await page.goto('/')
@@ -215,6 +259,59 @@ for (const scale of [1, 1.25, 1.5, 1.75, 2.625]) {
   })
 }
 
+test('EPUB ltr presents one cover page before turning by ordinary spreads', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({ spread: 'double' }),
+    ),
+  )
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'cover.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeEpub('ltr')),
+  })
+  const primary = page.locator('[data-reader-page="primary"] foliate-view')
+  const secondary = page.locator('[data-reader-page="secondary"] foliate-view')
+  await expect(primary).toBeVisible()
+  await expect(page.locator('[data-reader-page="secondary"]')).toBeHidden()
+  await expect.poll(() => rendererPage(primary)).toBe(1)
+  const firstPage = await rendererPage(primary)
+  const bounds = await page
+    .locator('[data-reader-page="primary"]')
+    .evaluate((node) => {
+      const box = node.getBoundingClientRect()
+      const surface = node.parentElement!.getBoundingClientRect()
+      return [box.left + box.width / 2, surface.left + surface.width / 2]
+    })
+  expect(Math.abs(bounds[0] - bounds[1])).toBeLessThan(3)
+  await page.getByRole('button', { name: '設定' }).click()
+  const fontSize = page.getByLabel('文字サイズの値')
+  await fontSize.fill('26')
+  await fontSize.press('Tab')
+  await page.getByRole('button', { name: '読書に戻る' }).click()
+  await expect.poll(() => rendererPage(primary)).toBe(firstPage)
+  await page.getByRole('button', { name: '次へ' }).click()
+  await expect.poll(() => rendererPage(primary)).toBe((firstPage ?? 0) + 1)
+  await expect(secondary).toBeVisible()
+  await expect.poll(() => rendererPage(secondary)).toBe((firstPage ?? 0) + 2)
+  await page.getByRole('button', { name: '前へ' }).click()
+  await expect.poll(() => rendererPage(primary)).toBe(firstPage)
+  await expect(page.locator('[data-reader-page="secondary"]')).toBeHidden()
+  await page.getByRole('button', { name: '設定' }).click()
+  await page
+    .getByRole('checkbox', { name: /先頭ページを表紙として1枚表示/ })
+    .uncheck()
+  await page.getByRole('button', { name: '読書に戻る' }).click()
+  await expect.poll(() => rendererPage(primary)).toBe(firstPage)
+  await expect(secondary).toBeVisible()
+  await expect.poll(() => rendererPage(secondary)).toBe((firstPage ?? 0) + 1)
+})
+
 test('native resize keeps the RTL lead across auto-spread boundaries @native', async ({
   page,
 }) => {
@@ -226,6 +323,7 @@ test('native resize keeps the RTL lead across auto-spread boundaries @native', a
         marginLeft: 31,
         marginRight: 23,
         gutter: 17,
+        firstPageSingle: false,
       }),
     ),
   )
@@ -315,7 +413,7 @@ test('image-only RTL sections occupy distinct consecutive spread pages', async (
   await page.addInitScript(() =>
     localStorage.setItem(
       'shiori.reader.settings.v1',
-      JSON.stringify({ spread: 'double' }),
+      JSON.stringify({ spread: 'double', firstPageSingle: false }),
     ),
   )
   await page.goto('/')
@@ -407,7 +505,7 @@ test('lazy EPUB images do not block opening or page navigation @lazy-native', as
   await page.addInitScript(() =>
     localStorage.setItem(
       'shiori.reader.settings.v1',
-      JSON.stringify({ spread: 'double' }),
+      JSON.stringify({ spread: 'double', firstPageSingle: false }),
     ),
   )
   await page.goto('/')
@@ -428,13 +526,153 @@ test('lazy EPUB images do not block opening or page navigation @lazy-native', as
   await expect.poll(() => rendererPage(primary)).toBe((before ?? 0) + 2)
 })
 
+test('reflow cover mode keeps page two reachable when enabled at page three', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 900 })
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({ spread: 'double', firstPageSingle: false }),
+    ),
+  )
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'reflow-cover-boundary.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeEpub('ltr')),
+  })
+  const primary = page.locator('[data-reader-page="primary"] foliate-view')
+  const secondary = page.locator('[data-reader-page="secondary"] foliate-view')
+  const next = page.getByRole('button', { name: '次へ' })
+  const prev = page.getByRole('button', { name: '前へ' })
+  await expect.poll(() => rendererPage(primary)).toBe(1)
+  const first = await rendererPage(primary)
+  await next.click()
+  await expect.poll(() => rendererPage(primary)).toBe((first ?? 0) + 2)
+  await page.getByRole('button', { name: '設定' }).click()
+  await page
+    .getByRole('checkbox', { name: /先頭ページを表紙として1枚表示/ })
+    .check()
+  await page.getByRole('button', { name: '読書に戻る' }).click()
+  await prev.click()
+  await expect.poll(() => rendererPage(primary)).toBe((first ?? 0) + 1)
+  await expect.poll(() => rendererPage(secondary)).toBe((first ?? 0) + 2)
+  await prev.click()
+  await expect.poll(() => rendererPage(primary)).toBe(first)
+  await expect(page.locator('[data-reader-page="secondary"]')).toBeHidden()
+})
+
+for (const longFirstSection of [false, true]) {
+  test(`reflow cover backward boundary handles ${longFirstSection ? 'long' : 'short'} first section`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1200, height: 900 })
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        'shiori.reader.settings.v1',
+        JSON.stringify({ spread: 'double', firstPageSingle: true }),
+      ),
+    )
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await page.locator('input[type=file]').setInputFiles({
+      name: 'boundary.epub',
+      mimeType: 'application/epub+zip',
+      buffer: Buffer.from(await makeBoundaryEpub(longFirstSection)),
+    })
+    const primary = page.locator('[data-reader-page="primary"] foliate-view')
+    const secondary = page.locator(
+      '[data-reader-page="secondary"] foliate-view',
+    )
+    const toc = page.getByRole('button', { name: '目次' })
+    await expect(toc).toBeEnabled()
+    await toc.click()
+    await page.getByRole('button', { name: 'Second section page two' }).click()
+    const section = (pane: Locator) =>
+      pane.evaluate((element) => {
+        const view = element as HTMLElement & {
+          renderer?: {
+            page?: number
+            pages?: number
+            getContents(): { index: number }[]
+          }
+        }
+        return {
+          page: view.renderer?.page,
+          count: Math.max(1, (view.renderer?.pages ?? 2) - 2),
+          index: view.renderer?.getContents()[0]?.index,
+        }
+      })
+    await expect
+      .poll(() => section(primary))
+      .toMatchObject({ index: 1, page: 2 })
+    await page.getByRole('button', { name: '前へ' }).click()
+    if (longFirstSection) {
+      await expect.poll(() => section(primary)).toMatchObject({ index: 0 })
+      await expect
+        .poll(async () => {
+          const { page, count } = await section(primary)
+          return page === count && count > 1
+        })
+        .toBe(true)
+      await expect
+        .poll(() => section(secondary))
+        .toMatchObject({ index: 1, page: 1 })
+    } else {
+      await expect
+        .poll(() => section(primary))
+        .toMatchObject({ index: 1, page: 1 })
+      await expect
+        .poll(() => section(secondary))
+        .toMatchObject({ index: 1, page: 2 })
+      await page.getByRole('button', { name: '前へ' }).click()
+      await expect.poll(() => section(primary)).toMatchObject({ index: 0 })
+    }
+  })
+}
+
+test('backward ordinary spreads restore the preceding chapter page', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'cover-chapters.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeCoverChapterEpub()),
+  })
+  const primary = page.locator('[data-reader-page="primary"] foliate-view')
+  const next = page.getByRole('button', { name: '次へ' })
+  const prev = page.getByRole('button', { name: '前へ' })
+  const contentIndex = (pane: Locator) =>
+    pane.evaluate((element) => {
+      const view = element as HTMLElement & {
+        renderer?: { getContents(): { index: number }[] }
+      }
+      return view.renderer?.getContents()[0]?.index
+    })
+  await expect.poll(() => contentIndex(primary)).toBe(0)
+  await next.click()
+  await expect.poll(() => contentIndex(primary)).toBe(1)
+  await expect.poll(() => rendererPage(primary)).toBe(1)
+  await next.click()
+  await expect.poll(() => contentIndex(primary)).toBe(2)
+  await expect.poll(() => rendererPage(primary)).toBe(2)
+  await prev.click()
+  await expect.poll(() => contentIndex(primary)).toBe(1)
+  await expect.poll(() => rendererPage(primary)).toBe(1)
+})
+
 test('fixed-layout EPUB navigates real pages and clamps the final spread', async ({
   page,
 }) => {
   await page.addInitScript(() =>
     localStorage.setItem(
       'shiori.reader.settings.v1',
-      JSON.stringify({ spread: 'double' }),
+      JSON.stringify({ spread: 'double', firstPageSingle: false }),
     ),
   )
   await page.goto('/')
@@ -465,13 +703,103 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
     .toContain('P1|P2')
 })
 
+test('fixed-layout EPUB cover turns around a short book without a stale peer', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({ spread: 'double', firstPageSingle: true }),
+    ),
+  )
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'fixed-cover.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeFixedEpub()),
+  })
+  const text = (name: string) =>
+    page
+      .locator(`[data-reader-page="${name}"] foliate-view`)
+      .evaluate((element) => {
+        const view = element as HTMLElement & {
+          renderer?: { getContents(): { doc: Document }[] }
+        }
+        return view.renderer?.getContents()[0]?.doc.body.innerText ?? ''
+      })
+  await expect.poll(() => text('primary')).toContain('P1')
+  await expect(page.locator('[data-reader-page="secondary"]')).toHaveCSS(
+    'visibility',
+    'hidden',
+  )
+  const next = page.getByRole('button', { name: '次へ' })
+  const prev = page.getByRole('button', { name: '前へ' })
+  await next.click()
+  await expect
+    .poll(async () => `${await text('primary')}|${await text('secondary')}`)
+    .toContain('P2|P3')
+  await expect(next).toBeDisabled()
+  await prev.click()
+  await expect.poll(() => text('primary')).toContain('P1')
+  await expect(page.locator('[data-reader-page="secondary"]')).toHaveCSS(
+    'visibility',
+    'hidden',
+  )
+  await next.click()
+  await expect
+    .poll(async () => `${await text('primary')}|${await text('secondary')}`)
+    .toContain('P2|P3')
+})
+
+test('fixed-layout cover mode keeps the first body page reachable from page three', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({ spread: 'double', firstPageSingle: false }),
+    ),
+  )
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'fixed-cover-boundary.epub',
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(await makeFixedEpub()),
+  })
+  const text = (name: string) =>
+    page
+      .locator(`[data-reader-page="${name}"] foliate-view`)
+      .evaluate((element) => {
+        const view = element as HTMLElement & {
+          renderer?: { getContents(): { doc: Document }[] }
+        }
+        return view.renderer?.getContents()[0]?.doc.body.innerText ?? ''
+      })
+  await expect
+    .poll(async () => `${await text('primary')}|${await text('secondary')}`)
+    .toContain('P1|P2')
+  await page.getByRole('button', { name: '次へ' }).click()
+  await expect.poll(() => text('primary')).toContain('P3')
+  await page.getByRole('button', { name: '設定' }).click()
+  await page
+    .getByRole('checkbox', { name: /先頭ページを表紙として1枚表示/ })
+    .check()
+  await page.getByRole('button', { name: '読書に戻る' }).click()
+  await page.getByRole('button', { name: '前へ' }).click()
+  await expect
+    .poll(async () => `${await text('primary')}|${await text('secondary')}`)
+    .toContain('P2|P3')
+})
+
 test('resize rebuilds the EPUB spread layout and peer pane', async ({
   page,
 }) => {
   await page.addInitScript(() =>
     localStorage.setItem(
       'shiori.reader.settings.v1',
-      JSON.stringify({ spread: 'auto' }),
+      JSON.stringify({ spread: 'auto', firstPageSingle: false }),
     ),
   )
   await page.goto('/')
@@ -506,6 +834,12 @@ test('resize rebuilds the EPUB spread layout and peer pane', async ({
 test('EPUB typography settings override publisher metrics in the rendered layout', async ({
   page,
 }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'shiori.reader.settings.v1',
+      JSON.stringify({ firstPageSingle: false }),
+    ),
+  )
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   await page.locator('input[type=file]').setInputFiles({
@@ -544,7 +878,7 @@ test('internal links from either spread page navigate from the primary pane', as
   await page.addInitScript(() =>
     localStorage.setItem(
       'shiori.reader.settings.v1',
-      JSON.stringify({ spread: 'double' }),
+      JSON.stringify({ spread: 'double', firstPageSingle: false }),
     ),
   )
   await page.goto('/')
@@ -589,7 +923,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await page.addInitScript(() =>
       localStorage.setItem(
         'shiori.reader.settings.v1',
-        JSON.stringify({ spread: 'double' }),
+        JSON.stringify({ spread: 'double', firstPageSingle: false }),
       ),
     )
     await page.goto('/')
@@ -654,7 +988,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await page.addInitScript(() =>
       localStorage.setItem(
         'shiori.reader.settings.v1',
-        JSON.stringify({ spread: 'double' }),
+        JSON.stringify({ spread: 'double', firstPageSingle: false }),
       ),
     )
     await page.goto('/')

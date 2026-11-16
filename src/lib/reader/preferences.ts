@@ -8,6 +8,7 @@ export interface ReaderSettings {
   marginLeft: number
   spread: 'auto' | 'single' | 'double'
   gutter: number
+  firstPageSingle: boolean
 }
 
 export const DEFAULT_SETTINGS = {
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS = {
   marginLeft: 8,
   spread: 'auto',
   gutter: 16,
+  firstPageSingle: true,
 } satisfies ReaderSettings
 
 export const SETTINGS_KEY = 'shiori.reader.settings.v1'
@@ -68,6 +70,10 @@ export const normalizeSettings = (value: unknown): ReaderSettings => {
         ? settings.spread
         : 'auto',
     gutter: bounded(settings.gutter, DEFAULT_SETTINGS.gutter, 0, 64),
+    firstPageSingle:
+      typeof settings.firstPageSingle === 'boolean'
+        ? settings.firstPageSingle
+        : true,
   }
 }
 
