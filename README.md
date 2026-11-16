@@ -11,8 +11,9 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 - Workers の実行環境は Cloudflare workerd です。Bun 1.4.4 の組み込みundiciはCloudflare開発サーバーとMiniflareのホスト側R2ストリーム処理に必要な互換性を満たさないため、これらのホスト処理にはNodeを使用します。
 - `bun run dev --host 0.0.0.0`（開発サーバー）
 - `bun run typecheck`、`bun run lint`（Oxlint + oxlint-tsgolint の型対応ルール）、`bun run format`（Oxfmtで整形）、`bun run format:check`（整形の確認）、`bun run test`
+- テスト方針: reader-lib のユニットテストは対象モジュールと並べて `src/lib/.../<module>.test.ts` に置き、純粋な振る舞いはまずユニットテストで確認します。高速な代表的ブラウザー回帰スイートは10シナリオで、各ケースをChromiumで1回実行し、モバイルエミュレーションは必要なスワイプケースだけに使います。E2E追加には具体的なブラウザー固有リスクを求め、スイートを増やすより重複チェックの置き換えを優先します。native DPIマトリクスや詳細なジェスチャー・ライフサイクル・目次・レイアウト・エラーの組み合わせは網羅的にはカバーしません。
 - サーバー統合テスト: `bun run test:server`。実際のMiniflare R2と署名付きJWTを使用します。Miniflare 5のR2ストリーム処理はBunではなく、プロジェクトのNode.jsで検証します。
-- ブラウザテスト初回: `bunx --bun --no-install playwright install chromium`、実行: `bun run test:e2e`。Playwright runner/workers は Bun、Playwright が起動する Vite webServer はNode 26.13.1です。包括的なデスクトップ Chromium、端末差が影響するモバイル経路、native実ウィンドウの複数スケールで検証します。重要な回帰・セキュリティ経路は維持し、同一の合成イベント設定や端末依存性の低い重複コンテキスト実行を減らしています。
+- ブラウザテスト初回: `bunx --bun --no-install playwright install chromium`、実行: `bun run test:e2e`。Playwright runner/workers は Bun、Playwright が起動する Vite webServer はNode 26.13.1です。単一のChromium smoke suiteを実行し、必要なスワイプケースのみモバイルエミュレーションを使います。
 - `bun run build`、本番ビルドのローカル確認: `bun run preview`（既定 `http://localhost:4173`）
 - デプロイ: `bunx --no-install void deploy --platform cloudflare`。Void CLIはプロジェクト内のNodeで起動します。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
 
@@ -78,7 +79,7 @@ Cloudflare管理用のログイン（`bunx void cloudflare login`）と、アプ
 
 ## GitHub Actions CI/CD
 
-- CIは `main` 向けの pull request、`main` への push、および手動実行で動きます。Node.js 24.22.0 / Bun 1.4.4 を使い、依存関係の凍結インストール、Void型生成、型検査、lint、Prettier確認、ユニット・サーバー統合テスト、ChromiumによるPlaywright（デスクトップ／モバイル両プロジェクト）、ビルドを検証します。
+- CIは `main` 向けの pull request、`main` への push、および手動実行で動きます。Node.js 24.22.0 / Bun 1.4.4 を使い、依存関係の凍結インストール、Void型生成、型検査、lint、Prettier確認、ユニット・サーバー統合テスト、単一ChromiumプロジェクトによるPlaywright smoke suite、ビルドを検証します。
 - `main` へのpush（PRのマージを含む）で、全CI成功後に production Environment を使って本番へ自動デプロイします。Actionsから `main` を選んで `workflow_dispatch` を手動実行することもできます。PRや他ブランチではデプロイしません。Void CLIが `CF_ACCESS_READINESS_ORIGIN` の `/__void/ready` を確認し、失敗時はデプロイを失敗させます。CIは `/api/books` にアクセスしません。
 - 本番配信は直列化し、後続のpushで進行中の配信をキャンセルしません。古いPRの検証だけをキャンセルします。
 - GitHubリポジトリの Settings → Environments で `production` を作成し、Deployment branches and tags を `main` のみに制限してください。必要なら required reviewers も設定してください。ワークフローからEnvironmentが自動作成されても、保護ルールやsecretsは設定されません。デプロイ前に設定を完了してください。

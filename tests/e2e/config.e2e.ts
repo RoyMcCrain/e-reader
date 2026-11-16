@@ -31,45 +31,6 @@ const makeArchive = async () => {
 	return Buffer.from(await (await writer.close()).arrayBuffer())
 }
 
-test('standalone config persists preferences across reload and recovers malformed storage', async ({
-	page,
-}) => {
-	await page.goto('/config')
-	await page.waitForLoadState('networkidle')
-	const firstPageSingle = page.getByRole('checkbox', {
-		name: /先頭ページを表紙として1枚表示/,
-	})
-	await expect(firstPageSingle).toBeChecked()
-	await firstPageSingle.uncheck()
-	await expect(firstPageSingle).not.toBeChecked()
-	await page.reload()
-	await expect(firstPageSingle).not.toBeChecked()
-	await page.getByRole('button', { name: '初期設定に戻す' }).click()
-	await expect(firstPageSingle).toBeChecked()
-	await page.getByLabel('文字サイズの値').click()
-	await page.getByLabel('文字サイズの値').press('Control+A')
-	await page.keyboard.type('27')
-	await page.getByLabel('文字サイズの値').press('Tab')
-	await expect.poll(() => persistedNumber(page, 'fontSize')).toBe(27)
-	await page.reload()
-	await expect(page.getByLabel('文字サイズの値')).toHaveValue('27')
-	await page.evaluate(() =>
-		localStorage.setItem('shiori.reader.settings.v1', '{bad json'),
-	)
-	await page.reload()
-	await page.waitForLoadState('networkidle')
-	await expect(page.getByLabel('文字サイズの値')).toHaveValue('18')
-	await expect(page.getByLabel('文字サイズの値')).toBeVisible()
-	await expect(page.locator('[aria-hidden="true"] img')).toHaveCount(0)
-	const size = page.getByLabel('文字サイズの値')
-	await size.fill('36')
-	await size.press('Tab')
-	await expect.poll(() => persistedNumber(page, 'fontSize')).toBe(36)
-	await size.fill('99')
-	await size.press('Tab')
-	await expect(size).toHaveValue('36')
-})
-
 test('config overlays a live book and disables its keyboard input', async ({
 	page,
 }) => {
