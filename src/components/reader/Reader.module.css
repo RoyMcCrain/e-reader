@@ -9,23 +9,25 @@
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .toolbar {
-  height: 40px;
+  min-height: 48px;
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 8px;
-  gap: 6px;
+  gap: 8px;
   border-bottom: 1px solid #e2dfd5;
 }
 .toolbarActions {
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-left: auto;
 }
-.toolbar button {
-  width: 40px;
-  height: 38px;
+.toolbar button,
+.footer button,
+.tocDialog button {
+  min-width: 44px;
+  min-height: 44px;
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -34,21 +36,52 @@
   background: transparent;
   color: #3b4b39;
   cursor: pointer;
+  font: inherit;
 }
-.toolbar button:disabled {
+.toolbar button:hover:not(:disabled),
+.footer button:hover:not(:disabled),
+.tocDialog button:hover {
+  background: #e9ecdf;
+}
+.toolbar button:disabled,
+.footer button:disabled {
   opacity: 0.35;
   cursor: default;
 }
 .toolbar button:focus-visible,
-.toc button:focus-visible {
+.footer button:focus-visible,
+.tocDialog button:focus-visible {
   outline: 2px solid #52694e;
   outline-offset: 2px;
 }
+.bookTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #3b4b39;
+}
+.footer {
+  min-height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(4px, 3vw, 24px);
+  padding: 0 8px;
+  border-top: 1px solid #e2dfd5;
+  background: #f6f3eb;
+}
+.footer button {
+  gap: 6px;
+  padding: 0 8px;
+}
 .progressLabel {
-  min-width: 42px;
+  min-width: 54px;
   text-align: center;
-  font-size: 12px;
-  color: #687363;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: #465541;
 }
 .pages {
   position: relative;
@@ -97,29 +130,45 @@
   color: #a6372c;
   z-index: 2;
 }
-.toc {
-  position: absolute;
-  z-index: 5;
-  right: 10px;
-  top: 46px;
-  max-height: 60dvh;
+.tocDialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(72dvh, calc(100dvh - 32px));
+  box-sizing: border-box;
   overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  background: #faf9f5;
-  box-shadow: 0 6px 24px #0002;
+  padding: 12px;
+  border: 1px solid #e2dfd5;
   border-radius: 12px;
+  background: #faf9f5;
+  color: #292d27;
+  box-shadow: 0 8px 32px #0003;
 }
-.toc button {
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
+.tocDialog::backdrop {
+  background: #20251f66;
+}
+.tocHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  position: sticky;
+  top: -12px;
+  padding: 4px 0;
+  background: #faf9f5;
+}
+.tocHeading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.tocDialog nav > div {
+  min-width: 0;
+}
+.tocDialog nav button {
+  max-width: 100%;
+  height: auto;
+  justify-content: flex-start;
   text-align: left;
+  overflow-wrap: anywhere;
   padding: 8px;
-  cursor: pointer;
-  font: inherit;
 }
 .subToc {
   padding-left: 12px;

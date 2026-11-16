@@ -5,6 +5,7 @@ import {
   useState,
   type Dispatch,
   type MutableRefObject,
+  type ReactNode,
   type SetStateAction,
 } from 'react'
 import type { TocItem } from 'foliate-js/epub.js'
@@ -211,7 +212,7 @@ const ReaderStage = ({
       </div>
     )}
     {loading && (
-      <p className={`${styles.message} ${styles.srOnly}`} role="status">
+      <p className={styles.message} role="status">
         本を開いています…
       </p>
     )}
@@ -425,9 +426,17 @@ interface ReaderControlsProps {
   indices: number[]
   progress: number
   direction: 'ltr' | 'rtl'
+  title: string
+  dialog: React.RefObject<HTMLDialogElement | null>
+  closeToc: () => void
+  children: ReactNode
 }
 
 const ReaderControls = ({
+  title,
+  dialog,
+  closeToc,
+  children,
   onClose,
   onSettings,
   toc,
@@ -451,11 +460,16 @@ const ReaderControls = ({
       <button aria-label="本を閉じる" title="本を閉じる" onClick={onClose}>
         <Icon name="close" />
       </button>
-      <div className={styles.toolbarActions} dir={direction}>
+      <span className={styles.bookTitle} title={title}>
+        {title}
+      </span>
+      <div className={styles.toolbarActions}>
         <button
           aria-label="目次"
           title="目次"
+          aria-haspopup="dialog"
           aria-expanded={showToc}
+          aria-controls="reader-toc-dialog"
           disabled={toc.length === 0}
           onClick={toggleToc}
         >
@@ -464,40 +478,72 @@ const ReaderControls = ({
         <button aria-label="設定" title="設定" onClick={onSettings}>
           <Icon name="settings" />
         </button>
-        <button
-          aria-label="前へ"
-          title="前へ"
-          disabled={navigationDisabled(
-            loading,
-            atStart,
-            Boolean(error) && !hasSession,
-          )}
-          onClick={() => turn(false)}
-        >
-          <Icon name={direction === 'rtl' ? 'next' : 'prev'} />
-        </button>
-        <span className={styles.progressLabel}>
-          {progressText(count, currentIndex, indices, progress)}
-        </span>
-        <button
-          aria-label="次へ"
-          title="次へ"
-          disabled={navigationDisabled(
-            loading,
-            atEnd,
-            Boolean(error) && !hasSession,
-          )}
-          onClick={() => turn(true)}
-        >
-          <Icon name={direction === 'rtl' ? 'prev' : 'next'} />
-        </button>
       </div>
     </header>
-    {showToc && (
-      <nav className={styles.toc} aria-label="目次">
+    {children}
+    <footer className={styles.footer} dir={direction}>
+      <button
+        aria-label="前へ"
+        title="前へ"
+        disabled={navigationDisabled(
+          loading,
+          atStart,
+          Boolean(error) && !hasSession,
+        )}
+        onClick={() => turn(false)}
+      >
+        <Icon name={direction === 'rtl' ? 'next' : 'prev'} /> 前へ
+      </button>
+      <span className={styles.progressLabel} dir="ltr">
+        {progressText(count, currentIndex, indices, progress)}
+      </span>
+      <button
+        aria-label="次へ"
+        title="次へ"
+        disabled={navigationDisabled(
+          loading,
+          atEnd,
+          Boolean(error) && !hasSession,
+        )}
+        onClick={() => turn(true)}
+      >
+        <Icon name={direction === 'rtl' ? 'prev' : 'next'} /> 次へ
+      </button>
+    </footer>
+    <dialog
+      ref={dialog}
+      id="reader-toc-dialog"
+      className={styles.tocDialog}
+      tabIndex={-1}
+      aria-labelledby="reader-toc-heading"
+      onCancel={(event) => {
+        event.preventDefault()
+        closeToc()
+      }}
+      onClose={closeToc}
+      onKeyDownCapture={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        if (
+          event.target === event.currentTarget &&
+          (event.clientX < rect.left ||
+            event.clientX > rect.right ||
+            event.clientY < rect.top ||
+            event.clientY > rect.bottom)
+        )
+          closeToc()
+      }}
+    >
+      <div className={styles.tocHeading}>
+        <h2 id="reader-toc-heading">目次</h2>
+        <button aria-label="目次を閉じる" onClick={closeToc}>
+          閉じる
+        </button>
+      </div>
+      <nav aria-label="目次">
         <Toc items={toc} goTo={goTo} />
       </nav>
-    )}
+    </dialog>
   </>
 )
 
@@ -509,6 +555,7 @@ export const Reader = ({
   onSettings,
 }: ReaderProps) => {
   const host = useRef<HTMLDivElement>(null)
+  const tocDialog = useRef<HTMLDialogElement>(null)
   const session = useRef<Session | null>(null)
   const generation = useRef(0)
   const queue = useRef<Promise<void>>(Promise.resolve())
@@ -556,6 +603,17 @@ export const Reader = ({
   }
   const turn = (next: boolean, swipeDirection?: SwipeDirection) =>
     scheduleTurn(next, swipeDirection, refs, setters)
+
+  useEffect(() => {
+    const element = tocDialog.current
+    if (!element) return
+    if (!active && showToc) {
+      setShowToc(false)
+      return
+    }
+    if (showToc && !element.open) element.showModal()
+    if (!showToc && element.open) element.close()
+  }, [active, showToc])
 
   useResizeColumns(host, settings, columnsRef, setColumns)
   useEffect(() => {
@@ -611,6 +669,7 @@ export const Reader = ({
   }
   const currentIndex = indices[0] ?? leadRef.current
   const count = archive?.names.length ?? 0
+  const title = file.name.replace(/\.(epub|zip)$/i, '')
   const padding = `${settings.marginTop}px ${settings.marginRight}px ${settings.marginBottom}px ${settings.marginLeft}px`
   return (
     <section className={styles.reader} aria-label="読書画面">
@@ -633,20 +692,26 @@ export const Reader = ({
         indices={indices}
         progress={progress}
         direction={direction}
-      />
-      <ReaderStage
-        archive={archive}
-        indices={indices}
-        urls={urls}
-        host={host}
-        padding={padding}
-        gutter={settings.gutter}
-        count={count}
-        loading={loading}
-        error={error}
-        setError={setError}
-        cover={settings.firstPageSingle && columns === 2 && currentIndex === 0}
-      />
+        title={title}
+        dialog={tocDialog}
+        closeToc={() => setShowToc(false)}
+      >
+        <ReaderStage
+          archive={archive}
+          indices={indices}
+          urls={urls}
+          host={host}
+          padding={padding}
+          gutter={settings.gutter}
+          count={count}
+          loading={loading}
+          error={error}
+          setError={setError}
+          cover={
+            settings.firstPageSingle && columns === 2 && currentIndex === 0
+          }
+        />
+      </ReaderControls>
     </section>
   )
 }
