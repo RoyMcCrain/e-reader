@@ -16,7 +16,14 @@ export interface EpubOptions {
 	active: boolean
 	signal: AbortSignal
 	onLocation: (location: ReaderLocation) => void
+	initialCFI?: string
+	onConfirmedPosition?: (cfi: string) => void
 	onError: (error: Error) => void
+}
+
+export interface EpubCheckpoint {
+	cfi: string | undefined
+	epoch: number
 }
 
 export interface EpubSession {
@@ -25,6 +32,15 @@ export interface EpubSession {
 	next: () => Promise<void>
 	prev: () => Promise<void>
 	goTo: (href: string) => Promise<void>
+	checkpoint: () => EpubCheckpoint
+	markTouched: () => void
+	restore: (
+		cfi: string,
+		onlyIfUntouched?: boolean,
+		expectedEpoch?: number,
+	) => Promise<boolean>
+	untouched: () => boolean
+	initialRestoreFailed?: boolean
 	configure: (settings: ReaderSettings, columns: 1 | 2) => Promise<void>
 	setActive: (active: boolean) => void
 	close: () => Promise<void>

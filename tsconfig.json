@@ -18,6 +18,8 @@
 		"tests",
 		"playwright.config.ts",
 		"vite.config.ts",
-		"void.config.ts"
+		"void.config.ts",
+		"db/schema.ts",
+		".void/bindings.d.ts"
 	]
 }

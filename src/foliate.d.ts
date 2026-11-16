@@ -14,6 +14,7 @@ declare module 'foliate-js/epub.js' {
 		toc?: TocItem[]
 		sections: EpubSection[]
 		rendition: { layout?: string; spread?: string }
+		resolveCFI(cfi: string): { index: number; anchor(doc: Document): Range }
 		transformTarget: EventTarget
 		init(): Promise<void>
 		destroy(): void
@@ -31,6 +32,7 @@ declare module 'foliate-js/epub.js' {
 		destroy(): void
 		sections: EpubSection[]
 		rendition: { layout?: string; spread?: string }
+		resolveCFI(cfi: string): { index: number; anchor(doc: Document): Range }
 	}
 }
 declare module 'foliate-js/epubcfi.js' {
@@ -44,7 +46,7 @@ declare module 'foliate-js/view.js' {
 	}
 	export interface FoliateContent {
 		doc: Document
-		index: number
+		index?: number
 	}
 	export interface FoliateRenderer extends HTMLElement {
 		page?: number
@@ -58,13 +60,17 @@ declare module 'foliate-js/view.js' {
 	}
 	export interface FoliateViewElement extends HTMLElement {
 		open(book: EpubBook): Promise<void>
-		init(options: { showTextStart?: boolean }): Promise<void>
+		init(options: {
+			showTextStart?: boolean
+			lastLocation?: string
+		}): Promise<void>
 		next(): Promise<void>
 		prev(): Promise<void>
 		goTo(href: string): Promise<void>
 		close(): void
 		lastLocation?: FoliateLocation
 		renderer?: FoliateRenderer | null
+		resolveCFI(cfi: string): { index: number; anchor(doc: Document): Range }
 		book: EpubBook | null
 	}
 	export interface FoliateLoadDetail {

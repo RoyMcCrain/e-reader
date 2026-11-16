@@ -88,6 +88,24 @@
 	opacity: 0;
 	pointer-events: none;
 }
+.positionStatus {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 18px;
+	color: #465541;
+	font-size: 11px;
+}
+.positionStatus button {
+	border: 0;
+	background: transparent;
+	color: #3b4b39;
+	text-decoration: underline;
+	cursor: pointer;
+	font: inherit;
+}
 .progress {
 	min-width: 0;
 	width: 100%;

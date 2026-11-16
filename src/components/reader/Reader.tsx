@@ -22,6 +22,20 @@ import type { EpubSession } from '#lib/reader/epub-types'
 import { bindHostInput } from '#lib/reader/input'
 import { columnsForWidth, nextLead, visibleIndices } from '#lib/reader/layout'
 import { animatePage, type SwipeDirection } from '#lib/reader/motion'
+import {
+	refreshPositionSession,
+	rollbackPositionSession,
+} from '#lib/reader/position-session'
+import {
+	hashBook,
+	loadPosition,
+	savePosition,
+	syncPosition,
+	adoptRemotePosition,
+	chooseLocalPosition,
+	chooseRemotePosition,
+} from '#lib/reader/positions'
+import type { RemotePosition } from '#lib/reader/positions'
 import type { ReaderSettings } from '#lib/reader/preferences'
 
 import styles from '#components/reader/Reader.module.css'
@@ -29,7 +43,7 @@ import styles from '#components/reader/Reader.module.css'
 type Archive = Awaited<ReturnType<typeof openImageArchive>>
 type Session =
 	| { kind: 'zip'; archive: Archive }
-	| { kind: 'epub'; epub: EpubSession }
+	| { kind: 'epub'; epub: EpubSession; bookId?: string }
 interface ReaderProps {
 	file: File
 	settings: ReaderSettings
@@ -40,6 +54,13 @@ interface ReaderProps {
 
 const messageFor = (cause: unknown) =>
 	cause instanceof Error ? cause.message : 'ファイルを開けませんでした。'
+
+const syncMessages = {
+	auth: 'ログインすると同期できます。',
+	conflict: '同期に競合があります。',
+	pending: '同期は保留中です。',
+	synced: '同期済み',
+}
 
 interface TocProps {
 	items: TocItem[]
@@ -226,20 +247,7 @@ const ReaderStage = ({
 	</main>
 )
 
-const openReaderFile = async ({
-	file,
-	id,
-	active,
-	settings,
-	host,
-	signal,
-	refs,
-	setters,
-	setArchive,
-	setToc,
-	setDirection,
-	setHasSession,
-}: {
+interface OpenReaderFileOptions {
 	file: File
 	id: number
 	active: boolean
@@ -252,7 +260,127 @@ const openReaderFile = async ({
 	setToc: Dispatch<SetStateAction<TocItem[]>>
 	setDirection: Dispatch<SetStateAction<'ltr' | 'rtl'>>
 	setHasSession: Dispatch<SetStateAction<boolean>>
-}) => {
+	setPositionStatus: Dispatch<SetStateAction<string>>
+	setRemoteCFI: Dispatch<SetStateAction<RemotePosition | undefined>>
+	setConflictPosition: (value: RemotePosition | null | undefined) => void
+	refreshPosition: (options: {
+		epub: EpubSession
+		bookId: string
+		id: number
+		signal: AbortSignal
+	}) => Promise<void>
+}
+
+const loadInitialPosition = async ({
+	file,
+	id,
+	signal,
+	refs,
+	setPositionStatus,
+}: Pick<
+	OpenReaderFileOptions,
+	'file' | 'id' | 'signal' | 'refs' | 'setPositionStatus'
+>) => {
+	let bookId: string | undefined
+	let initialCFI: string | undefined
+	try {
+		bookId = await hashBook(file)
+		initialCFI = (await loadPosition(bookId))?.cfi
+	} catch {
+		if (!signal.aborted && refs.generation.current === id)
+			setPositionStatus('端末内の読書位置を利用できません。')
+	}
+	return { bookId, initialCFI }
+}
+
+const openEpubFile = async ({
+	file,
+	id,
+	active,
+	settings,
+	host,
+	signal,
+	refs,
+	setters,
+	setToc,
+	setDirection,
+	setHasSession,
+	setPositionStatus,
+	setConflictPosition,
+	refreshPosition,
+}: OpenReaderFileOptions) => {
+	const { bookId, initialCFI } = await loadInitialPosition({
+		file,
+		id,
+		signal,
+		refs,
+		setPositionStatus,
+	})
+	if (signal.aborted) return
+	const epub = await openEpub({
+		initialCFI,
+		onConfirmedPosition: (cfi) => {
+			if (!bookId || signal.aborted || refs.generation.current !== id) return
+			setPositionStatus('端末に保存中…')
+			void savePosition(bookId, cfi)
+				.then(async () => {
+					if (signal.aborted || refs.generation.current !== id) return
+					setPositionStatus('端末に保存しました。同期中…')
+					const status = await syncPosition(bookId!)
+					if (signal.aborted || refs.generation.current !== id) return
+					const saved = await loadPosition(bookId!)
+					if (signal.aborted || refs.generation.current !== id) return
+					if (saved?.conflict !== undefined) setConflictPosition(saved.conflict)
+					if (status === 'auth') {
+						setPositionStatus(syncMessages.auth)
+						return
+					}
+					if (saved?.conflict !== undefined || status === 'conflict') {
+						setPositionStatus(syncMessages.conflict)
+						return
+					}
+					setPositionStatus(
+						saved?.pending || status === 'pending'
+							? syncMessages.pending
+							: '端末に保存し、同期しました。',
+					)
+				})
+				.catch(() => {
+					if (!signal.aborted && refs.generation.current === id)
+						setPositionStatus('読書位置を保存できません。')
+				})
+		},
+		file,
+		host,
+		settings,
+		columns: refs.columns.current,
+		active,
+		signal,
+		onLocation: (location) => {
+			if (signal.aborted || refs.generation.current !== id) return
+			setters.setProgress(Math.round(location.progress))
+			setters.setAtEnd(location.atEnd)
+		},
+		onError: (cause) => {
+			if (!signal.aborted && refs.generation.current === id)
+				setters.setError(cause.message)
+		},
+	})
+	if (signal.aborted) {
+		await epub.close()
+		return
+	}
+	refs.session.current = { kind: 'epub', epub, bookId }
+	setHasSession(true)
+	setDirection(epub.dir)
+	setToc(epub.toc)
+	if (epub.initialRestoreFailed)
+		setPositionStatus('保存した位置を開けず、先頭から表示しています。')
+	if (bookId) void refreshPosition({ epub, bookId, id, signal })
+}
+
+const openReaderFile = async (options: OpenReaderFileOptions) => {
+	const { file, id, signal, refs, setters, setArchive, setHasSession } = options
 	if (file.name.toLowerCase().endsWith('.zip')) {
 		const archive = await openImageArchive(file)
 		if (signal.aborted) {
@@ -263,35 +391,11 @@ const openReaderFile = async ({
 		setHasSession(true)
 		setArchive(archive)
 		await updateZip(archive, 0, id, refs, setters)
-	} else if (file.name.toLowerCase().endsWith('.epub')) {
-		const epub = await openEpub({
-			file,
-			host,
-			settings,
-			columns: refs.columns.current,
-			active,
-			signal,
-			onLocation: (location) => {
-				if (signal.aborted || refs.generation.current !== id) return
-				setters.setProgress(Math.round(location.progress))
-				setters.setAtEnd(location.atEnd)
-			},
-			onError: (cause) => {
-				if (!signal.aborted && refs.generation.current === id)
-					setters.setError(cause.message)
-			},
-		})
-		if (signal.aborted) {
-			await epub.close()
-			return
-		}
-		refs.session.current = { kind: 'epub', epub }
-		setHasSession(true)
-		setDirection(epub.dir)
-		setToc(epub.toc)
-	} else throw new Error('EPUBまたは画像ZIPを選んでください。')
+		return
+	}
+	if (file.name.toLowerCase().endsWith('.epub')) return openEpubFile(options)
+	throw new Error('EPUBまたは画像ZIPを選んでください。')
 }
-
 const useResizeColumns = (
 	host: React.RefObject<HTMLDivElement | null>,
 	settings: ReaderSettings,
@@ -340,6 +444,10 @@ const useOpenFile = ({
 	setLoading,
 	setDirection,
 	setHasSession,
+	setPositionStatus,
+	setRemoteCFI,
+	setConflictPosition,
+	refreshPosition,
 }: {
 	file: File
 	active: boolean
@@ -354,6 +462,10 @@ const useOpenFile = ({
 	setLoading: Dispatch<SetStateAction<boolean>>
 	setDirection: Dispatch<SetStateAction<'ltr' | 'rtl'>>
 	setHasSession: Dispatch<SetStateAction<boolean>>
+	setPositionStatus: Dispatch<SetStateAction<string>>
+	setRemoteCFI: Dispatch<SetStateAction<RemotePosition | undefined>>
+	setConflictPosition: (value: RemotePosition | null | undefined) => void
+	refreshPosition: OpenReaderFileOptions['refreshPosition']
 }) => {
 	const currentOpenOptions = useEffectEvent(() => ({ active, settings }))
 	useEffect(() => {
@@ -374,6 +486,9 @@ const useOpenFile = ({
 		setToc([])
 		setDirection('ltr')
 		setHasSession(false)
+		setPositionStatus('')
+		setRemoteCFI(undefined)
+		setConflictPosition(undefined)
 		setShowToc(false)
 		leadRef.current = 0
 		void openReaderFile({
@@ -389,6 +504,10 @@ const useOpenFile = ({
 			setToc,
 			setDirection,
 			setHasSession,
+			setPositionStatus,
+			setRemoteCFI,
+			setConflictPosition,
+			refreshPosition,
 		})
 			.then(() => {
 				if (!controller.signal.aborted && generationRef.current === id)
@@ -427,8 +546,51 @@ const useOpenFile = ({
 		setDirection,
 		setShowToc,
 		setHasSession,
+		setPositionStatus,
+		setRemoteCFI,
+		setConflictPosition,
+		refreshPosition,
 	])
 }
+
+interface PositionStatusProps {
+	positionStatus: string
+	remoteAvailable: boolean
+	useRemote: () => void
+	busy: boolean
+	conflict: boolean
+	useLocal: () => void
+}
+
+const PositionStatus = ({
+	positionStatus,
+	remoteAvailable,
+	useRemote,
+	busy,
+	conflict,
+	useLocal,
+}: PositionStatusProps) =>
+	positionStatus || conflict || remoteAvailable ? (
+		<output className={styles.positionStatus}>
+			{positionStatus}
+			{conflict ? (
+				<>
+					<button disabled={busy} onClick={useLocal}>
+						この端末の位置を使う
+					</button>
+					{remoteAvailable && (
+						<button disabled={busy} onClick={useRemote}>
+							別端末の位置を使う
+						</button>
+					)}
+				</>
+			) : remoteAvailable ? (
+				<button disabled={busy} onClick={useRemote}>
+					別端末の位置に移動
+				</button>
+			) : null}
+		</output>
+	) : null
 
 interface ReaderControlsProps {
 	onClose: () => void
@@ -452,6 +614,12 @@ interface ReaderControlsProps {
 	dialog: React.RefObject<HTMLDialogElement | null>
 	closeToc: () => void
 	children: ReactNode
+	positionStatus: string
+	remoteAvailable: boolean
+	useRemote: () => void
+	busy: boolean
+	conflict: boolean
+	useLocal: () => void
 }
 
 const ReaderControls = ({
@@ -459,6 +627,12 @@ const ReaderControls = ({
 	dialog,
 	closeToc,
 	children,
+	positionStatus,
+	remoteAvailable,
+	useRemote,
+	busy,
+	conflict,
+	useLocal,
 	onClose,
 	onSettings,
 	toc,
@@ -509,6 +683,14 @@ const ReaderControls = ({
 			className={`${styles.footer} ${footerVisible ? '' : styles.hidden}`}
 			dir={direction}
 		>
+			<PositionStatus
+				positionStatus={positionStatus}
+				remoteAvailable={remoteAvailable}
+				useRemote={useRemote}
+				busy={busy}
+				conflict={conflict}
+				useLocal={useLocal}
+			/>
 			<ReaderProgress
 				count={count}
 				currentIndex={currentIndex}
@@ -595,6 +777,19 @@ export const Reader = ({
 		file,
 		pinned,
 	})
+	const [positionStatus, setPositionStatus] = useState('')
+	const [remotePosition, setRemoteCFI] = useState<RemotePosition | undefined>()
+	const [hasConflict, setHasConflict] = useState(false)
+	const [choiceBusy, setChoiceBusy] = useState(false)
+	const choiceInFlight = useRef(false)
+	const positionQueue = useRef<Promise<void>>(Promise.resolve())
+	const handleConflictPosition = useCallback(
+		(value: RemotePosition | null | undefined) => {
+			setHasConflict(value !== undefined)
+			setRemoteCFI(value ?? undefined)
+		},
+		[],
+	)
 
 	const refs = useMemo<ZipRefs>(
 		() => ({
@@ -640,7 +835,74 @@ export const Reader = ({
 		if (!shouldShowToc && element.open) element.close()
 	}, [active, showToc])
 
+	const refreshPosition = useCallback<OpenReaderFileOptions['refreshPosition']>(
+		(options) => {
+			const run = async () => {
+				if (choiceInFlight.current) return
+				const { epub, bookId, id, signal } = options
+				const result = await refreshPositionSession({
+					bookId,
+					epub,
+					isCurrent: () =>
+						!signal.aborted &&
+						generation.current === id &&
+						!choiceInFlight.current &&
+						session.current?.kind === 'epub' &&
+						session.current.epub === epub,
+				})
+				if (
+					signal.aborted ||
+					generation.current !== id ||
+					choiceInFlight.current
+				)
+					return
+				handleConflictPosition(result.conflict)
+				if (result.remote) setRemoteCFI(result.remote)
+				if (!result.status) return
+				setPositionStatus((previous) => {
+					const restored = [
+						'別端末の位置に移動しました。',
+						'端末の新しい位置を保持しました。',
+					].includes(result.status)
+					return previous ===
+						'保存した位置を開けず、先頭から表示しています。' && !restored
+						? previous
+						: (syncMessages[result.status as keyof typeof syncMessages] ??
+								result.status)
+				})
+			}
+			positionQueue.current = positionQueue.current.catch(() => {}).then(run)
+			return positionQueue.current
+		},
+		[handleConflictPosition],
+	)
+
 	useResizeColumns(host, settings, columnsRef, setColumns)
+	useEffect(() => {
+		const retry = () => {
+			const current = session.current
+			const id = generation.current
+			if (
+				current?.kind !== 'epub' ||
+				!current.bookId ||
+				document.visibilityState === 'hidden'
+			)
+				return
+			if (choiceInFlight.current) return
+			void refreshPosition({
+				epub: current.epub,
+				bookId: current.bookId,
+				id,
+				signal: new AbortController().signal,
+			})
+		}
+		window.addEventListener('online', retry)
+		document.addEventListener('visibilitychange', retry)
+		return () => {
+			window.removeEventListener('online', retry)
+			document.removeEventListener('visibilitychange', retry)
+		}
+	}, [file, refreshPosition])
 	useEffect(() => {
 		const current = session.current
 		if (current?.kind === 'epub') void current.epub.configure(settings, columns)
@@ -675,6 +937,10 @@ export const Reader = ({
 		setLoading,
 		setDirection,
 		setHasSession,
+		setPositionStatus,
+		setRemoteCFI,
+		setConflictPosition: handleConflictPosition,
+		refreshPosition,
 	})
 
 	useLayoutEffect(() => {
@@ -693,6 +959,107 @@ export const Reader = ({
 		const current = session.current
 		if (current?.kind === 'epub') void current.epub.goTo(href)
 	}
+	const useRemote = () => {
+		if (choiceInFlight.current) return
+		const current = session.current
+		const id = generation.current
+		const candidate = remotePosition
+		if (current?.kind !== 'epub' || !current.bookId || !candidate) return
+		choiceInFlight.current = true
+		setChoiceBusy(true)
+		current.epub.markTouched()
+		const checkpoint = current.epub.checkpoint()
+		const bookId = current.bookId
+		void (async () => {
+			try {
+				const local = await loadPosition(bookId)
+				if (generation.current !== id || session.current !== current) return
+				const restored = await current.epub.restore(
+					candidate.cfi,
+					false,
+					checkpoint.epoch,
+				)
+				if (
+					generation.current !== id ||
+					session.current !== current ||
+					!restored
+				)
+					return
+				const chosen = local
+					? await chooseRemotePosition(bookId, candidate, local.mutationId)
+					: await adoptRemotePosition(bookId, candidate, undefined).then(
+							(adopted) => (adopted ? candidate.cfi : undefined),
+						)
+				if (generation.current !== id || session.current !== current) return
+				if (!chosen) {
+					await rollbackPositionSession(
+						{
+							bookId,
+							epub: current.epub,
+							isCurrent: () =>
+								generation.current === id && session.current === current,
+						},
+						checkpoint,
+					)
+					if (generation.current !== id || session.current !== current) return
+					setPositionStatus('同期に競合があります。')
+					return
+				}
+				setRemoteCFI(undefined)
+				setHasConflict(false)
+				setPositionStatus('別端末の位置に移動しました。')
+			} catch {
+				if (generation.current === id && session.current === current) {
+					await rollbackPositionSession(
+						{
+							bookId,
+							epub: current.epub,
+							isCurrent: () =>
+								generation.current === id && session.current === current,
+						},
+						checkpoint,
+					)
+					if (generation.current === id && session.current === current)
+						setPositionStatus('読書位置を保存できません。')
+				}
+			} finally {
+				choiceInFlight.current = false
+				setChoiceBusy(false)
+			}
+		})()
+	}
+
+	const useLocal = () => {
+		if (choiceInFlight.current) return
+		const current = session.current
+		const id = generation.current
+		if (current?.kind !== 'epub' || !current.bookId) return
+		choiceInFlight.current = true
+		setChoiceBusy(true)
+		current.epub.markTouched()
+		const bookId = current.bookId
+		void (async () => {
+			try {
+				await chooseLocalPosition(bookId)
+				if (generation.current !== id || session.current !== current) return
+				const status = await syncPosition(bookId)
+				if (generation.current !== id || session.current !== current) return
+				const latest = await loadPosition(bookId)
+				if (generation.current !== id || session.current !== current) return
+				const conflicted = latest?.conflict !== undefined
+				setHasConflict(conflicted)
+				setRemoteCFI(latest?.conflict ?? undefined)
+				setPositionStatus(syncMessages[status])
+			} catch {
+				if (generation.current === id && session.current === current)
+					setPositionStatus('読書位置を保存できません。')
+			} finally {
+				choiceInFlight.current = false
+				setChoiceBusy(false)
+			}
+		})()
+	}
+
 	const currentIndex = indices[0] ?? 0
 	const count = archive?.names.length ?? 0
 	const title = file.name.replace(/\.(epub|zip)$/i, '')
@@ -719,6 +1086,12 @@ export const Reader = ({
 				headerVisible={headerVisible}
 				footerVisible={footerVisible}
 				title={title}
+				positionStatus={positionStatus}
+				remoteAvailable={Boolean(remotePosition)}
+				useRemote={useRemote}
+				busy={choiceBusy}
+				conflict={hasConflict}
+				useLocal={useLocal}
 				dialog={tocDialog}
 				closeToc={() => setShowToc(false)}
 			>

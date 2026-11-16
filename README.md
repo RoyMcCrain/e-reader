@@ -24,6 +24,8 @@ bun run test:server
 bun run build
 ```
 
+読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
+
 ブラウザーテストは Chromium を初回インストールしてから実行します。
 
 ```bash
@@ -55,7 +57,9 @@ bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
 - 画面左右のクリック／タップ、スワイプ、← / →、PageDown / Space、PageUp / Shift+Space でページを移動します。
 - 1秒無操作でフッター、2秒無操作でヘッダーを隠します。ページ移動時は待たずに両方を隠し、マウス移動・タップ・キー操作で再表示します。
 - 歯車から文字サイズ、行間、余白、表示方法などを変更できます。設定はこのブラウザーに保存されます。
-- 本のデータや読書位置はブラウザーに保存しません。再読み込み後は本を選び直してください。
+- EPUB の読書位置だけを IndexedDB に保存します。本のデータは保存しないため、再読み込み後は同じファイルを選び直してください。
+- 認証済みの場合、読書位置を D1 と同期します。同期はオンライン復帰時などに再試行し、競合時は端末または別端末の位置を選べます。認証が必要な場合はログイン後に同期します。
+- EPUB 本文や ZIP はアップロードせず、Service Worker によるファイルキャッシュも行いません。
 
 ## 非公開クラウド書庫
 
@@ -65,9 +69,9 @@ bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
 
 ## デプロイ
 
-`main` の CI が成功すると本番へ自動デプロイされます。プルリクエストや他ブランチからはデプロイしません。CI は GitHub の `production` Environment に次の Actions secrets を必要とします。
+`main` の CI が成功すると本番へ自動デプロイされます。プルリクエストや他ブランチからはデプロイしません。CI はコミット済みの D1 マイグレーションをローカルで検証します。本番では `void deploy` が Worker の公開前に未適用の D1 マイグレーションを適用し、失敗時は公開を中止します。CI は GitHub の `production` Environment に次の Actions secrets を必要とします。
 
-- `CLOUDFLARE_API_TOKEN` — Worker デプロイ用。
+- `CLOUDFLARE_API_TOKEN` — Worker デプロイと D1 の作成・編集・マイグレーションに必要な権限を持つ API トークン。
 - `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` — `/__void/ready` 専用の readiness 認証用。書庫 API の認証には使いません。
 
 ## 制限と取り扱い

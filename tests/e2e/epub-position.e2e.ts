@@ -1,38 +1,8 @@
 import { expect, test } from '@playwright/test'
-import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 import { collapse } from 'foliate-js/epubcfi.js'
 
+import { makePositionEpub, type PositionView } from './epub-position-fixture'
 import { revealReader, turnPage } from './reader-actions'
-
-interface PositionView extends HTMLElement {
-	lastLocation?: { cfi?: string }
-	renderer?: {
-		getContents(): Array<{ doc: Document; index: number }>
-	} | null
-	resolveCFI(cfi: string): {
-		index: number
-		anchor(doc: Document): Range
-	}
-}
-
-const makeEpub = async (direction: 'ltr' | 'rtl') => {
-	const writer = new ZipWriter(new BlobWriter())
-	const paragraphs = Array.from(
-		{ length: 180 },
-		(_, index) =>
-			`<p>Paragraph ${index} <span>${'Reading position with nested text and ruby '.repeat(12)}<ruby>漢字<rt>かんじ</rt></ruby></span></p>`,
-	).join('')
-	const files = {
-		mimetype: 'application/epub+zip',
-		'META-INF/container.xml':
-			'<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
-		'book.opf': `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id" dir="${direction}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">position-${direction}</dc:identifier><dc:title>Position</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine page-progression-direction="${direction}"><itemref idref="chapter"/></spine></package>`,
-		'chapter.xhtml': `<html xmlns="http://www.w3.org/1999/xhtml"><head><style>.publisher { font-family: monospace; font-size: 11px; line-height: 1.1; }</style></head><body class="publisher" style="writing-mode:${direction === 'rtl' ? 'vertical-rl' : 'horizontal-tb'}">${paragraphs}</body></html>`,
-	}
-	for (const [name, content] of Object.entries(files))
-		await writer.add(name, new TextReader(content))
-	return new Uint8Array(await (await writer.close()).arrayBuffer())
-}
 
 for (const direction of ['ltr', 'rtl'] as const) {
 	test(`EPUB ${direction} reflow retains a mid-chapter reading point`, async ({
@@ -43,7 +13,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
 		await page.locator('input[type=file]').setInputFiles({
 			name: `${direction}.epub`,
 			mimeType: 'application/epub+zip',
-			buffer: Buffer.from(await makeEpub(direction)),
+			buffer: Buffer.from(await makePositionEpub(direction)),
 		})
 		const view = page.locator('[data-reader-page="primary"] foliate-view')
 		await expect(
