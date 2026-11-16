@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from '@playwright/test'
+import { turnPage } from './reader-actions'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 
 const rendererPage = (view: Locator) =>
@@ -9,13 +10,13 @@ const rendererPage = (view: Locator) =>
   )
 
 const expectTwoPageTurns = async (
+  page: import('@playwright/test').Page,
   primary: Locator,
-  next: Locator,
   sameSectionPeer: () => Promise<boolean>,
 ) => {
   let baseline = await rendererPage(primary)
   for (let turn = 0; turn < 2; turn++) {
-    await next.click()
+    await turnPage(page, true)
     await expect.poll(() => rendererPage(primary)).toBe((baseline ?? 0) + 2)
     await expect.poll(sameSectionPeer).toBe(true)
     baseline = await rendererPage(primary)
@@ -238,8 +239,6 @@ for (const scale of [1, 1.25, 1.5, 1.75, 2.625]) {
       mimeType: 'application/epub+zip',
       buffer: Buffer.from(await makeImageOnlyEpub()),
     })
-    const next = page.getByRole('button', { name: '次へ' })
-    const prev = page.getByRole('button', { name: '前へ' })
     const colors = ['221,34,17,255', '34,102,204,255']
     const expectSpread = async (indices: number[]) => {
       await expect.poll(() => imageSpreadState(page)).toEqual(indices)
@@ -250,11 +249,11 @@ for (const scale of [1, 1.25, 1.5, 1.75, 2.625]) {
         )
     }
     await expectSpread([0, 1])
-    await next.click()
+    await turnPage(page, true)
     await expectSpread([2, 3])
-    await expect(next).toBeDisabled()
     await expect.poll(() => imageSpreadState(page)).toEqual([2, 3])
-    await prev.click()
+    await turnPage(page, true)
+    await turnPage(page, false)
     await expectSpread([0, 1])
   })
 }
@@ -295,11 +294,11 @@ test('EPUB ltr presents one cover page before turning by ordinary spreads', asyn
   await fontSize.press('Tab')
   await page.getByRole('button', { name: '読書に戻る' }).click()
   await expect.poll(() => rendererPage(primary)).toBe(firstPage)
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect.poll(() => rendererPage(primary)).toBe((firstPage ?? 0) + 1)
   await expect(secondary).toBeVisible()
   await expect.poll(() => rendererPage(secondary)).toBe((firstPage ?? 0) + 2)
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, false)
   await expect.poll(() => rendererPage(primary)).toBe(firstPage)
   await expect(page.locator('[data-reader-page="secondary"]')).toBeHidden()
   await page.getByRole('button', { name: '設定' }).click()
@@ -484,7 +483,7 @@ test('image-only RTL sections occupy distinct consecutive spread pages', async (
         return view?.renderer?.getContents()[0]?.index
       }),
     )
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect.poll(sectionIndices).toEqual([2, 3])
   const primaryWidth = () =>
     page
@@ -515,14 +514,12 @@ test('lazy EPUB images do not block opening or page navigation @lazy-native', as
     mimeType: 'application/epub+zip',
     buffer: Buffer.from(await makeLazyEpub()),
   })
-  const next = page.getByRole('button', { name: '次へ' })
   const primary = page.locator('[data-reader-page="primary"] foliate-view')
   await expect(page.getByText('本を開いています…')).toHaveCount(0, {
     timeout: 15_000,
   })
-  await expect(next).toBeEnabled()
   const before = await rendererPage(primary)
-  await next.click()
+  await turnPage(page, true)
   await expect.poll(() => rendererPage(primary)).toBe((before ?? 0) + 2)
 })
 
@@ -545,21 +542,19 @@ test('reflow cover mode keeps page two reachable when enabled at page three', as
   })
   const primary = page.locator('[data-reader-page="primary"] foliate-view')
   const secondary = page.locator('[data-reader-page="secondary"] foliate-view')
-  const next = page.getByRole('button', { name: '次へ' })
-  const prev = page.getByRole('button', { name: '前へ' })
   await expect.poll(() => rendererPage(primary)).toBe(1)
   const first = await rendererPage(primary)
-  await next.click()
+  await turnPage(page, true)
   await expect.poll(() => rendererPage(primary)).toBe((first ?? 0) + 2)
   await page.getByRole('button', { name: '設定' }).click()
   await page
     .getByRole('checkbox', { name: /先頭ページを表紙として1枚表示/ })
     .check()
   await page.getByRole('button', { name: '読書に戻る' }).click()
-  await prev.click()
+  await turnPage(page, false)
   await expect.poll(() => rendererPage(primary)).toBe((first ?? 0) + 1)
   await expect.poll(() => rendererPage(secondary)).toBe((first ?? 0) + 2)
-  await prev.click()
+  await turnPage(page, false)
   await expect.poll(() => rendererPage(primary)).toBe(first)
   await expect(page.locator('[data-reader-page="secondary"]')).toBeHidden()
 })
@@ -608,7 +603,7 @@ for (const longFirstSection of [false, true]) {
     await expect
       .poll(() => section(primary))
       .toMatchObject({ index: 1, page: 2 })
-    await page.getByRole('button', { name: '前へ' }).click()
+    await turnPage(page, false)
     if (longFirstSection) {
       await expect.poll(() => section(primary)).toMatchObject({ index: 0 })
       await expect
@@ -627,7 +622,7 @@ for (const longFirstSection of [false, true]) {
       await expect
         .poll(() => section(secondary))
         .toMatchObject({ index: 1, page: 2 })
-      await page.getByRole('button', { name: '前へ' }).click()
+      await turnPage(page, false)
       await expect.poll(() => section(primary)).toMatchObject({ index: 0 })
     }
   })
@@ -645,8 +640,6 @@ test('backward ordinary spreads restore the preceding chapter page', async ({
     buffer: Buffer.from(await makeCoverChapterEpub()),
   })
   const primary = page.locator('[data-reader-page="primary"] foliate-view')
-  const next = page.getByRole('button', { name: '次へ' })
-  const prev = page.getByRole('button', { name: '前へ' })
   const contentIndex = (pane: Locator) =>
     pane.evaluate((element) => {
       const view = element as HTMLElement & {
@@ -655,13 +648,13 @@ test('backward ordinary spreads restore the preceding chapter page', async ({
       return view.renderer?.getContents()[0]?.index
     })
   await expect.poll(() => contentIndex(primary)).toBe(0)
-  await next.click()
+  await turnPage(page, true)
   await expect.poll(() => contentIndex(primary)).toBe(1)
   await expect.poll(() => rendererPage(primary)).toBe(1)
-  await next.click()
+  await turnPage(page, true)
   await expect.poll(() => contentIndex(primary)).toBe(2)
   await expect.poll(() => rendererPage(primary)).toBe(2)
-  await prev.click()
+  await turnPage(page, false)
   await expect.poll(() => contentIndex(primary)).toBe(1)
   await expect.poll(() => rendererPage(primary)).toBe(1)
 })
@@ -694,13 +687,102 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
   await expect
     .poll(async () => `${await text('primary')}|${await text('secondary')}`)
     .toContain('P1|P2')
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect.poll(() => text('primary')).toContain('P3')
-  await expect(page.getByRole('button', { name: '次へ' })).toBeDisabled()
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, true)
+  await turnPage(page, false)
   await expect
     .poll(async () => `${await text('primary')}|${await text('secondary')}`)
     .toContain('P1|P2')
+})
+
+test('fixed-layout EPUB session awaits no-op turns at the final spread', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const fixture = [...(await makeFixedEpub())]
+  await page.evaluate(async (bytes) => {
+    const readerModule = '/src/lib/reader/epub.ts'
+    const preferencesModule = '/src/lib/reader/preferences.ts'
+    const { openEpub } = (await import(
+      readerModule
+    )) as typeof import('#lib/reader/epub')
+    const { DEFAULT_SETTINGS } = await import(preferencesModule)
+    const host = document.createElement('div')
+    host.style.cssText = 'position:fixed;width:800px;height:600px;'
+    document.body.append(host)
+    const errors: string[] = []
+    const session = await openEpub({
+      file: new File([new Uint8Array(bytes)], 'fixed.epub'),
+      host,
+      settings: {
+        ...DEFAULT_SETTINGS,
+        spread: 'double',
+        firstPageSingle: true,
+      },
+      columns: 2,
+      active: true,
+      signal: new AbortController().signal,
+      onLocation: () => {},
+      onError: (error) => errors.push(error.message),
+    })
+    Object.assign(window, {
+      fixedSession: session,
+      fixedHost: host,
+      fixedErrors: errors,
+    })
+  }, fixture)
+  const readSpread = () =>
+    page.evaluate(() =>
+      ['primary', 'secondary']
+        .map((name) => {
+          const view = document.querySelector(
+            `[data-reader-page="${name}"] foliate-view`,
+          ) as
+            | (HTMLElement & {
+                renderer?: { getContents(): { doc: Document }[] }
+              })
+            | null
+          return view?.renderer?.getContents()[0]?.doc.body.innerText ?? ''
+        })
+        .join('|'),
+    )
+  try {
+    await expect.poll(readSpread).toContain('P1')
+    await page.evaluate(() =>
+      (
+        window as unknown as Window & {
+          fixedSession: { next: () => Promise<void> }
+        }
+      ).fixedSession.next(),
+    )
+    await expect.poll(readSpread).toBe('P2|P3')
+    const finalSpread = await readSpread()
+    await page.evaluate(() =>
+      (
+        window as unknown as Window & {
+          fixedSession: { next: () => Promise<void> }
+        }
+      ).fixedSession.next(),
+    )
+    expect(await readSpread()).toBe(finalSpread)
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as Window & { fixedErrors: string[] }).fixedErrors,
+      ),
+    ).toEqual([])
+  } finally {
+    await page.evaluate(async () => {
+      const state = window as unknown as Window & {
+        fixedSession: { close: () => Promise<void> }
+        fixedHost: HTMLElement
+      }
+      await state.fixedSession.close()
+      state.fixedHost.remove()
+    })
+  }
 })
 
 test('fixed-layout EPUB cover turns around a short book without a stale peer', async ({
@@ -733,20 +815,18 @@ test('fixed-layout EPUB cover turns around a short book without a stale peer', a
     'visibility',
     'hidden',
   )
-  const next = page.getByRole('button', { name: '次へ' })
-  const prev = page.getByRole('button', { name: '前へ' })
-  await next.click()
+  await turnPage(page, true)
   await expect
     .poll(async () => `${await text('primary')}|${await text('secondary')}`)
     .toContain('P2|P3')
-  await expect(next).toBeDisabled()
-  await prev.click()
+  await turnPage(page, true)
+  await turnPage(page, false)
   await expect.poll(() => text('primary')).toContain('P1')
   await expect(page.locator('[data-reader-page="secondary"]')).toHaveCSS(
     'visibility',
     'hidden',
   )
-  await next.click()
+  await turnPage(page, true)
   await expect
     .poll(async () => `${await text('primary')}|${await text('secondary')}`)
     .toContain('P2|P3')
@@ -780,14 +860,14 @@ test('fixed-layout cover mode keeps the first body page reachable from page thre
   await expect
     .poll(async () => `${await text('primary')}|${await text('secondary')}`)
     .toContain('P1|P2')
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect.poll(() => text('primary')).toContain('P3')
   await page.getByRole('button', { name: '設定' }).click()
   await page
     .getByRole('checkbox', { name: /先頭ページを表紙として1枚表示/ })
     .check()
   await page.getByRole('button', { name: '読書に戻る' }).click()
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, false)
   await expect
     .poll(async () => `${await text('primary')}|${await text('secondary')}`)
     .toContain('P2|P3')
@@ -952,32 +1032,28 @@ for (const direction of ['ltr', 'rtl'] as const) {
           `${await bodyText('primary')}|${await bodyText('secondary')}`,
       )
       .toContain('A|B')
-    const next = page.getByRole('button', { name: '次へ' })
-    const prev = page.getByRole('button', { name: '前へ' })
-    await next.click()
+    await turnPage(page, true)
     await expect
       .poll(
         async () =>
           `${await bodyText('primary')}|${await bodyText('secondary')}`,
       )
       .toContain('C|D')
-    await next.click()
+    await turnPage(page, true)
     await expect.poll(() => bodyText('primary')).toContain('E')
     await expect(page.locator('[data-reader-spread]')).toHaveAttribute(
       'data-at-end',
       'true',
     )
-    const final = await bodyText('primary')
-    await expect(next).toBeDisabled()
-    await expect(bodyText('primary')).resolves.toBe(final)
-    await prev.click()
+    await turnPage(page, true)
+    await turnPage(page, false)
     await expect
       .poll(
         async () =>
           `${await bodyText('primary')}|${await bodyText('secondary')}`,
       )
       .toContain('C|D')
-    await prev.click()
+    await turnPage(page, false)
     await expect
       .poll(
         async () =>
@@ -1081,7 +1157,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
         (element as HTMLElement & { renderer?: { page?: number } }).renderer
           ?.page,
     )
-    await page.getByRole('button', { name: '次へ' }).click()
+    await turnPage(page, true)
     await expect
       .poll(() =>
         primary.evaluate(
@@ -1092,10 +1168,6 @@ for (const direction of ['ltr', 'rtl'] as const) {
       )
       .toBe((beforeButtonTurn ?? 0) + 2)
     await expect.poll(sameSectionPeer).toBe(true)
-    await expectTwoPageTurns(
-      primary,
-      page.getByRole('button', { name: '次へ' }),
-      sameSectionPeer,
-    )
+    await expectTwoPageTurns(page, primary, sameSectionPeer)
   })
 }

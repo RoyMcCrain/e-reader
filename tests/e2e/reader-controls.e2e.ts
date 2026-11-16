@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { turnPage } from './reader-actions'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 
 const makeEpub = async (direction: 'ltr' | 'rtl' = 'ltr') => {
@@ -49,7 +50,6 @@ const openBook = async (
     buffer: await makeEpub(direction),
   })
   await expect(page.getByRole('status')).toBeHidden()
-  await expect(page.getByRole('button', { name: '次へ' })).toBeEnabled()
   await expect(page.getByRole('button', { name: '目次' })).toBeEnabled()
   await expect
     .poll(() =>
@@ -86,15 +86,10 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
   for (const direction of ['ltr', 'rtl'] as const) {
     await page.setViewportSize({ width: 320, height: 720 })
     await openBook(page, direction)
-    const previous = page.getByRole('button', { name: '前へ' })
-    const next = page.getByRole('button', { name: '次へ' })
-    const prevBox = await previous.boundingBox()
-    const nextBox = await next.boundingBox()
-    if (direction === 'rtl') expect(nextBox!.x).toBeLessThan(prevBox!.x)
-    else expect(prevBox!.x).toBeLessThan(nextBox!.x)
     const header = page.locator('header')
     const stage = page.getByRole('main', { name: '読書ページ' })
     const footer = page.locator('footer')
+    await expect(footer.locator('button')).toHaveCount(0)
     await expect(header).toBeVisible()
     const headerBox = await header.boundingBox()
     const stageBox = await stage.boundingBox()
@@ -103,11 +98,6 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
     expect(stageBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height)
     expect(footerBox!.y).toBeGreaterThanOrEqual(stageBox!.y + stageBox!.height)
     expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(720)
-    for (const button of [previous, next]) {
-      const box = await button.boundingBox()
-      expect(box!.width).toBeGreaterThanOrEqual(44)
-      expect(box!.height).toBeGreaterThanOrEqual(44)
-    }
     await expect(page.getByRole('button', { name: '本を閉じる' })).toHaveCSS(
       'direction',
       'ltr',
@@ -120,49 +110,26 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
     await expect(progressbar).toBeVisible()
     await expect(progressbar).toHaveAttribute('aria-valuetext', /本全体の目安/)
     await expect(page.getByTitle(/本全体の目安/)).toBeVisible()
-    await expect(page.locator('footer').getByText(/^\d+%$/)).toHaveAttribute(
-      'dir',
-      'ltr',
-    )
-    await expect(footer).not.toContainText(
-      /前へ|次へ|本全体の目安|あと\d+ページ|最終ページ/,
-    )
-    await expect(previous).toHaveText('')
-    await expect(next).toHaveText('')
-    await next.click()
+    await expect(footer).toHaveText('')
+    await stage.click({
+      position: {
+        x: direction === 'rtl' ? 8 : stageBox!.width - 8,
+        y: stageBox!.height / 2,
+      },
+    })
     await expect.poll(() => content(page)).toContain('Middle content')
-    await next.click()
+    await turnPage(page, true)
     await expect.poll(() => content(page)).toContain('Ending content')
     await expect(progressbar).toHaveAttribute(
       'aria-valuetext',
       /100%、最終ページ/,
     )
-    await expect(footer).toHaveText('100%')
-    const geometry = await page.evaluate(() => {
-      const footer = document.querySelector('footer')!
-      const progress = footer.querySelector('[role="progressbar"]')!
-      const buttons = [...footer.querySelectorAll('button')]
-      const bounds = (element: Element) => {
-        const rect = element.getBoundingClientRect()
-        return { left: rect.left, right: rect.right }
-      }
-      return {
-        progress: bounds(progress),
-        buttons: buttons.map((button) => ({
-          ...bounds(button),
-          label: button.innerText,
-          wraps: button.scrollHeight > button.clientHeight,
-        })),
-      }
-    })
-    for (const button of geometry.buttons) {
-      expect(button.wraps).toBe(false)
-      expect(
-        button.left >= geometry.progress.right ||
-          button.right <= geometry.progress.left,
-      ).toBe(true)
-    }
-    await previous.click()
+    await expect(footer).toHaveText('')
+    const progressBox = await progressbar.boundingBox()
+    expect(progressBox!.x + progressBox!.width / 2).toBeCloseTo(160, 0)
+    expect(progressBox!.x).toBeGreaterThanOrEqual(0)
+    expect(progressBox!.x + progressBox!.width).toBeLessThanOrEqual(320)
+    await turnPage(page, false)
     await expect.poll(() => content(page)).toContain('Middle content')
     await expect(progressbar).not.toHaveAttribute('aria-valuetext', /100%/)
     const closeBox = await header

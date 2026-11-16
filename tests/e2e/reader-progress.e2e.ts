@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { turnPage } from './reader-actions'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
 test('ZIP progress follows visible pages, remaining pages, and completion', async ({
@@ -33,20 +34,20 @@ test('ZIP progress follows visible pages, remaining pages, and completion', asyn
   )
   await expect(page.locator('footer')).toHaveText('1/6')
   await expect(page.getByTitle('1/6、17%、あと5ページ')).toBeVisible()
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
   await expect(progress).toHaveAttribute(
     'aria-valuetext',
     '2–3/6、50%、あと3ページ',
   )
   await expect(page.getByTitle('2–3/6、50%、あと3ページ')).toBeVisible()
   await expect(page.locator('footer')).toHaveText('2–3/6')
-  await page.getByRole('button', { name: '次へ' }).click()
-  await page.getByRole('button', { name: '次へ' }).click()
+  await turnPage(page, true)
+  await turnPage(page, true)
   await expect(progress).toHaveAttribute(
     'aria-valuetext',
     '6/6、100%、最終ページ',
   )
-  await page.getByRole('button', { name: '前へ' }).click()
+  await turnPage(page, false)
   await expect(progress).toHaveAttribute(
     'aria-valuetext',
     '4–5/6、83%、あと1ページ',

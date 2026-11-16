@@ -38,12 +38,13 @@ export const ReaderProgress = ({
   const remaining = progressRemaining(count, currentIndex, indices)
   const detail = atEnd ? '最終ページ' : remaining
   const valueText = [location, `${value}%`, detail].filter(Boolean).join('、')
-  const label = count ? location : `${value}%`
   return (
     <div className={styles.progress} title={valueText}>
-      <span className={styles.progressLabel} dir="ltr">
-        {label}
-      </span>
+      {count > 0 && (
+        <span className={styles.progressLabel} dir="ltr">
+          {location}
+        </span>
+      )}
       <div
         className={styles.progressTrack}
         role="progressbar"
