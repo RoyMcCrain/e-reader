@@ -4,17 +4,25 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 
 ## 開発
 
-- Bun をパッケージ管理・スクリプト実行に使用します。`bun install`
+- Bun 1.4.4 をパッケージ管理、ユニットテスト、型検査・lint・format・Playwright runnerに使用します。`bun install`
+- Cloudflare/Vite の開発・build・preview、Void CLI、実R2サーバー統合テストは Node.js 26.13.1 で実行します。Void 1.9.1 のNode 26系の要件（26.12以上）を満たす版を `node` パッケージで固定し、CIも同じ版です。
 - ソース内の参照は `#components/...`・`#lib/...` など、`src` 基準の import に統一します。実行時は `package.json` の `imports`、拡張子なしの型解決は `tsconfig.json` の `paths` で同じ `#*` → `./src/*` を設定しています。Nodeで直接実行する参照は `.ts` を付け、自動生成ファイルとブラウザー内評価の `/src/...` URLは変更しません。
-- Void 1.9.1 が要求する Node.js（`^24.22.0 || >=26.12.0`）に合わせ、24.22.0 を `node` パッケージでプロジェクト内に用意します。Cloudflare workerd は Bun で代用できません。
+- Oxfmtはimportと`package.json`（scriptsを含む）をソートし、コードのインデントには幅2のタブを使います。YAMLはスペースを使い、`bun.lock`と生成済み`src/routeTree.gen.ts`は整形対象外です。副作用import同士の相対順は保持しますが、通常のimportはその前後に移動し得るため、初期化順への依存は差分で確認します。
+- Workers の実行環境は Cloudflare workerd です。Bun 1.4.4 の組み込みundiciはCloudflare開発サーバーとMiniflareのホスト側R2ストリーム処理に必要な互換性を満たさないため、これらのホスト処理にはNodeを使用します。
 - `bun run dev --host 0.0.0.0`（開発サーバー）
-- `bun run typecheck`, `bun run lint`, `bun test`
+- `bun run typecheck`、`bun run lint`（Oxlint + oxlint-tsgolint の型対応ルール）、`bun run format`（Oxfmtで整形）、`bun run format:check`（整形の確認）、`bun run test`
 - サーバー統合テスト: `bun run test:server`。実際のMiniflare R2と署名付きJWTを使用します。Miniflare 5のR2ストリーム処理はBunではなく、プロジェクトのNode.jsで検証します。
-- ブラウザテスト初回: `bunx playwright install chromium`、実行: `bun run test:e2e`
+- ブラウザテスト初回: `bunx --bun --no-install playwright install chromium`、実行: `bun run test:e2e`。Playwright runner/workers は Bun、Playwright が起動する Vite webServer はNode 26.13.1です。包括的なデスクトップ Chromium、端末差が影響するモバイル経路、native実ウィンドウの複数スケールで検証します。重要な回帰・セキュリティ経路は維持し、同一の合成イベント設定や端末依存性の低い重複コンテキスト実行を減らしています。
 - `bun run build`、本番ビルドのローカル確認: `bun run preview`（既定 `http://localhost:4173`）
-- デプロイ: `bunx void deploy --platform cloudflare`。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
+- デプロイ: `bunx --no-install void deploy --platform cloudflare`。Void CLIはプロジェクト内のNodeで起動します。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
 
 スマホから開く場合は同じネットワークの PC の IP アドレスと開発サーバーのポートを指定します。OS のファイアウォールや WSL の設定によってはポート転送が必要です。
+
+## 静的解析ポリシー
+
+Oxlint は TypeScript の型安全性に加えて React Hooks / Compiler correctness と JSX accessibility を error として検査します。`any` と unsafe な型の利用は許可せず、外部データは `unknown` として検証してから扱います。これらの検査は誤りを減らす補助であり、すべての不具合やアクセシビリティ上の問題を検出する保証ではありません。
+
+例外は、意図した制御文字除去・拒否の正規表現、ブラウザー設定の hydration、native dialog の backdrop dismissal のように、個別の理由を隣接コメントで説明できる場合に限ります。読書進捗インジケーターはRTLの方向と独自のtrack/fill stylingを保つ単一の `div` に完全な `progressbar` ARIA 属性を付けるため、該当するprefer-tag-over-role検査だけを局所的に抑制しています。テストでは、元のメソッドの復元や receiver を保持した呼び出しのための unbound-method 参照を限定的に許容します。例外は対象箇所だけに限定し、型安全性・React correctness のルール全体を無効化しません。
 
 ## 操作
 
