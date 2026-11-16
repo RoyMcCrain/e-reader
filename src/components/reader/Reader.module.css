@@ -62,7 +62,8 @@
   color: #3b4b39;
 }
 .footer {
-  min-height: 88px;
+  min-height: 52px;
+  box-sizing: border-box;
   flex: none;
   display: grid;
   grid-template-columns: auto minmax(0, 320px) auto;
@@ -75,8 +76,7 @@
 }
 .footer button {
   flex-shrink: 0;
-  gap: 6px;
-  padding: 0 8px;
+  padding: 0;
   white-space: nowrap;
 }
 .footer button:last-of-type {
@@ -86,18 +86,23 @@
   min-width: 0;
   width: 100%;
   display: grid;
-  grid-template-rows: auto 6px auto;
-  gap: 4px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   color: #465541;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .progressTrack {
   display: flex;
-  height: 6px;
+  min-width: 0;
+  height: 4px;
   overflow: hidden;
   border-radius: 999px;
   background: #e2dfd5;
+}
+.progressTrack:only-child {
+  grid-column: 1 / -1;
 }
 .progressFill {
   display: block;
@@ -106,24 +111,9 @@
   background: #718365;
   transition: width 160ms ease;
 }
-.progressHeading {
-  display: flex;
-  justify-content: space-between;
-  gap: 4px;
+.progressLabel {
   white-space: nowrap;
-}
-.progressDetail {
-  min-height: 1em;
-  text-align: center;
-  white-space: nowrap;
-}
-.progressPercent {
   font-weight: 600;
-}
-.progressMessage {
-  text-align: center;
-  white-space: nowrap;
-  font-size: 12px;
 }
 .pages {
   position: relative;

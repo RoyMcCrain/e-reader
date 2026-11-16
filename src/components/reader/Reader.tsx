@@ -483,7 +483,7 @@ const ReaderControls = ({
         )}
         onClick={() => turn(false)}
       >
-        <Icon name={direction === 'rtl' ? 'next' : 'prev'} /> 前へ
+        <Icon name={direction === 'rtl' ? 'next' : 'prev'} />
       </button>
       <ReaderProgress
         count={count}
@@ -505,7 +505,7 @@ const ReaderControls = ({
         )}
         onClick={() => turn(true)}
       >
-        <Icon name={direction === 'rtl' ? 'prev' : 'next'} /> 次へ
+        <Icon name={direction === 'rtl' ? 'prev' : 'next'} />
       </button>
     </footer>
     <dialog

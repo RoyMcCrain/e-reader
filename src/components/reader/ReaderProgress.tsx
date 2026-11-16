@@ -29,9 +29,6 @@ export const ReaderProgress = ({
   if (loading || unavailable)
     return (
       <div className={styles.progress}>
-        <span className={styles.progressMessage}>
-          {loading ? '準備中' : '進捗を表示できません'}
-        </span>
         <div className={styles.progressTrack} aria-hidden="true" />
       </div>
     )
@@ -41,14 +38,12 @@ export const ReaderProgress = ({
   const remaining = progressRemaining(count, currentIndex, indices)
   const detail = atEnd ? '最終ページ' : remaining
   const valueText = [location, `${value}%`, detail].filter(Boolean).join('、')
+  const label = count ? location : `${value}%`
   return (
-    <div className={styles.progress}>
-      <div className={styles.progressHeading}>
-        <span dir="ltr">{location}</span>
-        <span className={styles.progressPercent} dir="ltr">
-          {value}%
-        </span>
-      </div>
+    <div className={styles.progress} title={valueText}>
+      <span className={styles.progressLabel} dir="ltr">
+        {label}
+      </span>
       <div
         className={styles.progressTrack}
         role="progressbar"
@@ -61,7 +56,6 @@ export const ReaderProgress = ({
       >
         <span className={styles.progressFill} style={{ width: `${value}%` }} />
       </div>
-      <span className={styles.progressDetail}>{detail || '\u00a0'}</span>
     </div>
   )
 }

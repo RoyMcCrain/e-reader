@@ -31,12 +31,15 @@ test('ZIP progress follows visible pages, remaining pages, and completion', asyn
     'aria-valuetext',
     '1/6、17%、あと5ページ',
   )
-  await expect(page.locator('footer')).toContainText('17%')
+  await expect(page.locator('footer')).toHaveText('1/6')
+  await expect(page.getByTitle('1/6、17%、あと5ページ')).toBeVisible()
   await page.getByRole('button', { name: '次へ' }).click()
   await expect(progress).toHaveAttribute(
     'aria-valuetext',
     '2–3/6、50%、あと3ページ',
   )
+  await expect(page.getByTitle('2–3/6、50%、あと3ページ')).toBeVisible()
+  await expect(page.locator('footer')).toHaveText('2–3/6')
   await page.getByRole('button', { name: '次へ' }).click()
   await page.getByRole('button', { name: '次へ' }).click()
   await expect(progress).toHaveAttribute(
