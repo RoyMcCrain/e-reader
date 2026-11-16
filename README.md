@@ -12,7 +12,7 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 - サーバー統合テスト: `bun run test:server`。実際のMiniflare R2と署名付きJWTを使用します。Miniflare 5のR2ストリーム処理はBunではなく、プロジェクトのNode.jsで検証します。
 - ブラウザテスト初回: `bunx playwright install chromium`、実行: `bun run test:e2e`
 - `bun run build`、本番ビルドのローカル確認: `bun run preview`（既定 `http://localhost:4173`）
-- デプロイ: `bunx void deploy --platform cloudflare`。保護済みドメインへの再デプロイは、後述のAccess認証付きreadiness確認が必要です。
+- デプロイ: `bunx void deploy --platform cloudflare`。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
 
 スマホから開く場合は同じネットワークの PC の IP アドレスと開発サーバーのポートを指定します。OS のファイアウォールや WSL の設定によってはポート転送が必要です。
 
@@ -42,13 +42,16 @@ EPUB は現在のページが指に追従し、短いスワイプや中断時に
 - `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`ACCESS_ALLOWED_EMAIL` は `void.config.ts` のWorker変数です。APIトークンやログインJWTをソース・ログへ保存しないでください。
 - `workers.dev` とプレビューURLは無効にします。初回は公開ルートのないWorkerをデプロイし、Access設定完了後にカスタムドメインを接続します。
 
-保護済みホストへの再デプロイは、許可されたユーザーのAccessセッションでreadiness確認を行います。通常の対話端末で実行してください。
+保護済みホストへの再デプロイでは、Void CLIが `/__void/ready` を確認します。手動デプロイでは、readiness専用Accessアプリの許可ユーザーとして通常の対話端末でログインしてください。専用アプリはルートアプリと異なるaudienceを持つため、root URLではなくreadiness URLを指定します。
 
 ```bash
-CF_ACCESS_TOKEN="$(cloudflared access token --app=https://reader.rrrr.dev)" \
+cloudflared access login --quiet https://reader.rrrr.dev/__void/ready
+CF_ACCESS_TOKEN="$(cloudflared access token --app=https://reader.rrrr.dev/__void/ready)" \
 CF_ACCESS_READINESS_ORIGIN="https://reader.rrrr.dev" \
 bunx void deploy --platform cloudflare
 ```
+
+readiness専用アプリの認証はデプロイ時の準備確認だけに使われます。ルートアプリと `/api/books` は引き続き所有者のみです。CIのサービス認証情報を人に渡さず、手動デプロイは所有者の対話ログインで行います。
 
 Cloudflare管理用のログイン（`bunx void cloudflare login`）と、アプリのAccessログインは別です。初回や別の環境では `bunx void connect --platform cloudflare` で管理CLIの接続先も保存してください。LinuxではVoidのブラウザーログインに利用可能なOS keyringが必要です。
 
@@ -57,19 +60,15 @@ Cloudflare管理用のログイン（`bunx void cloudflare login`）と、アプ
 ## GitHub Actions CI/CD
 
 - CIは `main` 向けの pull request、`main` への push、および手動実行で動きます。Node.js 24.22.0 / Bun 1.4.4 を使い、依存関係の凍結インストール、Void型生成、型検査、lint、Prettier確認、ユニット・サーバー統合テスト、ChromiumによるPlaywright（デスクトップ／モバイル両プロジェクト）、ビルドを検証します。
-- `main` へのpush（PRのマージを含む）で、全CI成功後に production Environment を使って本番へ自動デプロイします。Actionsから `main` を選んで `workflow_dispatch` を手動実行することもできます。PRや他ブランチではデプロイしません。実行前に `https://reader.rrrr.dev/api/books` でAccessセッションを確認し、HTTP 200以外（期限切れ・未認証を含む）なら公開処理を開始しません。
+- `main` へのpush（PRのマージを含む）で、全CI成功後に production Environment を使って本番へ自動デプロイします。Actionsから `main` を選んで `workflow_dispatch` を手動実行することもできます。PRや他ブランチではデプロイしません。Void CLIが `CF_ACCESS_READINESS_ORIGIN` の `/__void/ready` を確認し、失敗時はデプロイを失敗させます。CIは `/api/books` にアクセスしません。
 - 本番配信は直列化し、後続のpushで進行中の配信をキャンセルしません。古いPRの検証だけをキャンセルします。
 - GitHubリポジトリの Settings → Environments で `production` を作成し、Deployment branches and tags を `main` のみに制限してください。必要なら required reviewers も設定してください。ワークフローからEnvironmentが自動作成されても、保護ルールやsecretsは設定されません。デプロイ前に設定を完了してください。
-- `production` Environment に次の2つのActions secretsを登録します。
+- `production` Environment に次の3つのActions secretsを登録します。
   - `CLOUDFLARE_API_TOKEN`: VoidからWorkerをデプロイするCloudflare APIトークン。対象アカウントのWorkers Scripts Editと、利用リソースの読み取り権限が必要です。別途明示的にプロビジョニングする製品がある場合に限り、その製品の編集権限を追加してください。不要な広範権限は付与しません。
-  - `CF_ACCESS_TOKEN`: 所有者自身のメール認証で得る、短時間有効なCloudflare Accessアプリセッション。現行ポリシーでは有効期間は24時間です。自動配信でも期限内のトークンが必要です。事前確認で欠落・期限切れを検出した場合は、Voidの公開コマンドを実行しません。更新後に `main` の手動実行で再配信してください。
-- 許可された所有者として通常の端末でAccessログインし、短期トークンを秘密値のまま標準入力で登録します（コマンド出力やログへ表示しません）。有効期限後は同じ手順で更新します。
+  - `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET`: `/__void/ready` 専用Cloudflare Accessアプリ用に発行したサービス認証情報。専用サービスTokenの有効期間は必要最小限にし、期限前にローテーションしてください。
+- CI用に `reader.rrrr.dev/__void/ready` 専用のCloudflare Accessアプリを設定してください。ホスト名ワイルドカードを使わず、`/__void/ready` に限定します。許可ポリシーには特定のCIサービスTokenだけをService Authで許可し、手動デプロイ用として既存の所有者限定ポリシーも再利用します。BypassやEveryoneは設定しません。ルートアプリと `/api/books` は所有者限定のままにし、サービス認証情報を許可しないでください。未認証readinessもブロックしてください。
 
-  ```bash
-  cloudflared access token --app=https://reader.rrrr.dev | gh secret set CF_ACCESS_TOKEN --env production
-  ```
-
-  管理用 `CLOUDFLARE_API_TOKEN` はCloudflareで別途作成し、同じEnvironmentのsecret設定画面から登録してください。Cloudflare管理APIの認証と、アプリへのAccess認証は別物です。Accessポリシーを広げたり、サービス認証を追加したりしてCIを通さないでください。
+  `CLOUDFLARE_API_TOKEN` はCloudflareで別途作成し、同じEnvironmentのsecret設定画面から登録してください。Cloudflare管理APIの認証と、アプリへのAccess認証は別物です。
 
 ## 公開リポジトリでの取り扱い
 
