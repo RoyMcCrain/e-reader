@@ -17,6 +17,7 @@ import { openImageArchive } from '#lib/reader/archive'
 import { animatePage, type SwipeDirection } from '#lib/reader/motion'
 import { columnsForWidth, nextLead, visibleIndices } from '#lib/reader/layout'
 import { Icon } from '#components/reader/Icon'
+import { ReaderProgress } from '#components/reader/ReaderProgress'
 import styles from '#components/reader/Reader.module.css'
 
 type Archive = Awaited<ReturnType<typeof openImageArchive>>
@@ -347,6 +348,8 @@ const useOpenFile = ({
     setLoading(true)
     setters.setError('')
     setters.setProgress(0)
+    setters.setAtStart(true)
+    setters.setAtEnd(false)
     setArchive(null)
     setUrls([])
     setters.setIndices([])
@@ -395,18 +398,6 @@ const navigationDisabled = (
   atBoundary: boolean,
   fatalError: boolean,
 ) => loading || atBoundary || fatalError
-
-const progressText = (
-  count: number,
-  currentIndex: number,
-  indices: number[],
-  progress: number,
-) => {
-  if (!count) return `${progress}%`
-  const last = indices.at(-1)
-  const range = last !== undefined && indices.length > 1 ? `–${last + 1}` : ''
-  return `${currentIndex + 1}${range}/${count}`
-}
 
 interface ReaderControlsProps {
   onClose: () => void
@@ -494,9 +485,16 @@ const ReaderControls = ({
       >
         <Icon name={direction === 'rtl' ? 'next' : 'prev'} /> 前へ
       </button>
-      <span className={styles.progressLabel} dir="ltr">
-        {progressText(count, currentIndex, indices, progress)}
-      </span>
+      <ReaderProgress
+        count={count}
+        currentIndex={currentIndex}
+        indices={indices}
+        progress={progress}
+        atEnd={atEnd}
+        loading={loading}
+        unavailable={Boolean(error) && !hasSession}
+        direction={direction}
+      />
       <button
         aria-label="次へ"
         title="次へ"

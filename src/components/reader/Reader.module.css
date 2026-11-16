@@ -62,26 +62,68 @@
   color: #3b4b39;
 }
 .footer {
-  min-height: 52px;
+  min-height: 88px;
   flex: none;
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 320px) auto;
   justify-content: center;
-  gap: clamp(4px, 3vw, 24px);
-  padding: 0 8px;
+  align-items: center;
+  gap: clamp(4px, 2vw, 16px);
+  padding: 4px 8px;
   border-top: 1px solid #e2dfd5;
   background: #f6f3eb;
 }
 .footer button {
+  flex-shrink: 0;
   gap: 6px;
   padding: 0 8px;
+  white-space: nowrap;
 }
-.progressLabel {
-  min-width: 54px;
-  text-align: center;
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
+.footer button:last-of-type {
+  justify-self: end;
+}
+.progress {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  grid-template-rows: auto 6px auto;
+  gap: 4px;
   color: #465541;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.progressTrack {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2dfd5;
+}
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #718365;
+  transition: width 160ms ease;
+}
+.progressHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  white-space: nowrap;
+}
+.progressDetail {
+  min-height: 1em;
+  text-align: center;
+  white-space: nowrap;
+}
+.progressPercent {
+  font-weight: 600;
+}
+.progressMessage {
+  text-align: center;
+  white-space: nowrap;
+  font-size: 12px;
 }
 .pages {
   position: relative;
@@ -190,5 +232,8 @@
 @media (prefers-reduced-motion: reduce) {
   .imagePair {
     animation: none !important;
+  }
+  .progressFill {
+    transition: none;
   }
 }
