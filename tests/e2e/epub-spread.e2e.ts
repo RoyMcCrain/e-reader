@@ -835,47 +835,6 @@ test('resize rebuilds the EPUB spread layout and peer pane', async ({
 	expect(errors).toEqual([])
 })
 
-test('EPUB typography settings override publisher metrics in the rendered layout', async ({
-	page,
-}) => {
-	await page.addInitScript(() =>
-		localStorage.setItem(
-			'shiori.reader.settings.v1',
-			JSON.stringify({ firstPageSingle: false }),
-		),
-	)
-	await page.goto('/')
-	await page.waitForLoadState('networkidle')
-	await page.locator('input[type=file]').setInputFiles({
-		name: 'styled.epub',
-		mimeType: 'application/epub+zip',
-		buffer: Buffer.from(await makeEpub('ltr')),
-	})
-	const primary = page.locator('[data-reader-page="primary"] foliate-view')
-	const reading = () =>
-		primary.evaluate((element) => {
-			const view = element as HTMLElement & {
-				lastLocation?: { cfi?: string }
-				renderer?: { getContents(): { doc: Document }[] }
-			}
-			const body = view.renderer?.getContents()[0]?.doc.body
-			return {
-				cfi: view.lastLocation?.cfi,
-				font: body ? getComputedStyle(body).fontSize : '',
-			}
-		})
-	await expect.poll(async () => (await reading()).font).toBe('18px')
-	const before = await reading()
-	await page.getByRole('button', { name: '設定' }).click()
-	await page.keyboard.press('ArrowRight')
-	expect((await reading()).cfi).toBe(before.cfi)
-	const fontSize = page.getByLabel('文字サイズの値')
-	await fontSize.fill('26')
-	await fontSize.press('Tab')
-	await page.getByRole('button', { name: '読書に戻る' }).click()
-	await expect.poll(async () => (await reading()).font).toBe('26px')
-})
-
 test('internal links from either spread page navigate from the primary pane', async ({
 	page,
 }) => {

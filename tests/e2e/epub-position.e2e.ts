@@ -25,7 +25,7 @@ const makeEpub = async (direction: 'ltr' | 'rtl') => {
 		'META-INF/container.xml':
 			'<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
 		'book.opf': `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id" dir="${direction}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">position-${direction}</dc:identifier><dc:title>Position</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine page-progression-direction="${direction}"><itemref idref="chapter"/></spine></package>`,
-		'chapter.xhtml': `<html xmlns="http://www.w3.org/1999/xhtml"><head><style>body { font-family: monospace; font-size: 11px; line-height: 1.1; }</style></head><body style="writing-mode:${direction === 'rtl' ? 'vertical-rl' : 'horizontal-tb'}">${paragraphs}</body></html>`,
+		'chapter.xhtml': `<html xmlns="http://www.w3.org/1999/xhtml"><head><style>.publisher { font-family: monospace; font-size: 11px; line-height: 1.1; }</style></head><body class="publisher" style="writing-mode:${direction === 'rtl' ? 'vertical-rl' : 'horizontal-tb'}">${paragraphs}</body></html>`,
 	}
 	for (const [name, content] of Object.entries(files))
 		await writer.add(name, new TextReader(content))
@@ -171,6 +171,13 @@ for (const direction of ['ltr', 'rtl'] as const) {
 
 		await waitForLayout(18, 32.4)
 		await page.getByRole('button', { name: '設定' }).click()
+		const beforeKeyboard = await view.evaluate(
+			(el) => (el as PositionView).lastLocation?.cfi,
+		)
+		await page.keyboard.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight')
+		expect(
+			await view.evaluate((el) => (el as PositionView).lastLocation?.cfi),
+		).toBe(beforeKeyboard)
 		let saved = await capturePoint()
 		await apply('文字サイズの値', '24', 24, 43.2)
 		await expect.poll(() => savedPointIsVisible(saved)).toBe(true)

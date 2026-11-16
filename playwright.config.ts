@@ -21,6 +21,13 @@ export default defineConfig({
 		{
 			name: 'mobile',
 			grepInvert: /@native/,
+			testIgnore: [
+				'**/epub-gesture.e2e.ts',
+				'**/epub-lifecycle.e2e.ts',
+				'**/reader-input.e2e.ts',
+				'**/reader-layout.e2e.ts',
+				'**/svg-security.e2e.ts',
+			],
 			use: { ...devices['Pixel 7'] },
 		},
 		{

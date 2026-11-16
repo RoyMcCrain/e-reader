@@ -12,7 +12,7 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 - `bun run dev --host 0.0.0.0`（開発サーバー）
 - `bun run typecheck`、`bun run lint`（Oxlint + oxlint-tsgolint の型対応ルール）、`bun run format`（Oxfmtで整形）、`bun run format:check`（整形の確認）、`bun run test`
 - サーバー統合テスト: `bun run test:server`。実際のMiniflare R2と署名付きJWTを使用します。Miniflare 5のR2ストリーム処理はBunではなく、プロジェクトのNode.jsで検証します。
-- ブラウザテスト初回: `bunx --bun --no-install playwright install chromium`、実行: `bun run test:e2e`。Playwright runner/workers は Bun、Playwright が起動する Vite webServer はNode 26.13.1です。デスクトップ／モバイル／native各プロジェクトで検証します。
+- ブラウザテスト初回: `bunx --bun --no-install playwright install chromium`、実行: `bun run test:e2e`。Playwright runner/workers は Bun、Playwright が起動する Vite webServer はNode 26.13.1です。包括的なデスクトップ Chromium、端末差が影響するモバイル経路、native実ウィンドウの複数スケールで検証します。重要な回帰・セキュリティ経路は維持し、同一の合成イベント設定や端末依存性の低い重複コンテキスト実行を減らしています。
 - `bun run build`、本番ビルドのローカル確認: `bun run preview`（既定 `http://localhost:4173`）
 - デプロイ: `bunx --no-install void deploy --platform cloudflare`。Void CLIはプロジェクト内のNodeで起動します。保護済みドメインへの再デプロイは、`/__void/ready` 専用Accessアプリでの認証が必要です。Void CLIがreadinessを確認します。
 

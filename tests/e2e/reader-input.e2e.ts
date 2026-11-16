@@ -114,7 +114,7 @@ const installInput = async (page: import('@playwright/test').Page) => {
 	})
 }
 
-test('public host input owns gestures and respects controls and selection', async ({
+test('public host input owns gestures, respects controls and selection, and resets click suppression', async ({
 	page,
 }) => {
 	const result = await installInput(page)
@@ -126,12 +126,6 @@ test('public host input owns gestures and respects controls and selection', asyn
 	expect(result.controlTurns).toEqual([])
 	expect(result.selectedClickTurns).toEqual([])
 	expect(result.outsideTurns).toEqual([])
-})
-
-test('public host input falls back to the last point and resets click suppression on a fresh gesture', async ({
-	page,
-}) => {
-	const result = await installInput(page)
 	expect(result.shortEmptyEndTurns).toEqual([])
 	expect(result.longEmptyEndTurns).toEqual([true])
 	expect(result.swipeClickSuppressionTurns).toEqual([])
