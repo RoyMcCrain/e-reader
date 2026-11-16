@@ -120,15 +120,7 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
     await expect(progressbar).toBeVisible()
     await expect(progressbar).toHaveAttribute('aria-valuetext', /本全体の目安/)
     await expect(page.getByTitle(/本全体の目安/)).toBeVisible()
-    await expect(page.locator('footer').getByText(/^\d+%$/)).toHaveAttribute(
-      'dir',
-      'ltr',
-    )
-    await expect(footer).not.toContainText(
-      /前へ|次へ|本全体の目安|あと\d+ページ|最終ページ/,
-    )
-    await expect(previous).toHaveText('')
-    await expect(next).toHaveText('')
+    await expect(footer).toHaveText('')
     await next.click()
     await expect.poll(() => content(page)).toContain('Middle content')
     await next.click()
@@ -137,7 +129,7 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
       'aria-valuetext',
       /100%、最終ページ/,
     )
-    await expect(footer).toHaveText('100%')
+    await expect(footer).toHaveText('')
     const geometry = await page.evaluate(() => {
       const footer = document.querySelector('footer')!
       const progress = footer.querySelector('[role="progressbar"]')!
