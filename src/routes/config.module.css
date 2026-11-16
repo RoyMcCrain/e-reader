@@ -51,7 +51,8 @@
   font-size: 15px;
 }
 .selectSetting,
-.numericSetting {
+.numericSetting,
+.checkSetting {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -59,6 +60,25 @@
   min-height: 48px;
   border-top: 1px solid #eeeeea;
   font-size: 14px;
+}
+.checkSetting {
+  justify-content: flex-start;
+  border-top: 1px solid #eeeeea;
+  font-size: 14px;
+}
+.checkSetting input {
+  width: 20px;
+  height: 20px;
+  accent-color: #52694e;
+}
+.checkSetting span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.checkSetting small {
+  color: #686e64;
+  font-size: 12px;
 }
 .selectSetting select {
   max-width: 58%;

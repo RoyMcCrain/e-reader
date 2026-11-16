@@ -113,6 +113,19 @@ function Config() {
             <option value="double">見開き</option>
           </select>
         </label>
+        <label className={styles.checkSetting}>
+          <input
+            type="checkbox"
+            checked={settings.firstPageSingle}
+            onChange={(event) =>
+              updateSettings({ firstPageSingle: event.currentTarget.checked })
+            }
+          />
+          <span>
+            先頭ページを表紙として1枚表示
+            <small>表紙がない本ではオフにしてください。</small>
+          </span>
+        </label>
         <label className={styles.selectSetting}>
           <span>書体</span>
           <select

@@ -55,7 +55,7 @@ const openBook = async (browser: Browser, direction: Direction) => {
   await page.addInitScript(() => {
     localStorage.setItem(
       'shiori.reader.settings.v1',
-      JSON.stringify({ spread: 'double' }),
+      JSON.stringify({ spread: 'double', firstPageSingle: false }),
     )
   })
   await page.goto('/')

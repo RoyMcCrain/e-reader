@@ -6,6 +6,15 @@ import {
 } from '#lib/reader/preferences'
 
 describe('reader settings normalization', () => {
+  test('defaults first-page single-cover display on and preserves explicit false', () => {
+    expect(DEFAULT_SETTINGS.firstPageSingle).toBe(true)
+    expect(normalizeSettings({ firstPageSingle: false }).firstPageSingle).toBe(
+      false,
+    )
+    expect(
+      normalizeSettings({ firstPageSingle: 'false' }).firstPageSingle,
+    ).toBe(true)
+  })
   test('clamps finite numbers to supported limits and preserves enum choices', () => {
     expect(
       normalizeSettings({
@@ -16,6 +25,7 @@ describe('reader settings normalization', () => {
         marginRight: 120,
         gutter: 70,
         spread: 'double',
+        firstPageSingle: false,
       }),
     ).toMatchObject({
       fontFamily: 'serif',
@@ -25,6 +35,7 @@ describe('reader settings normalization', () => {
       marginRight: 96,
       gutter: 64,
       spread: 'double',
+      firstPageSingle: false,
     })
   })
 
@@ -35,6 +46,7 @@ describe('reader settings normalization', () => {
         fontSize: Number.NaN,
         lineHeight: '2',
         spread: 'wide',
+        firstPageSingle: 'false',
       }),
     ).toEqual(DEFAULT_SETTINGS)
     expect(SETTINGS_KEY).toBe('shiori.reader.settings.v1')

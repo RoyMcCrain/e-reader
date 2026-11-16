@@ -62,6 +62,7 @@ interface ZipRefs {
   swipe: MutableRefObject<SwipeDirection | null>
   imageRequest: MutableRefObject<number>
   active: MutableRefObject<boolean>
+  firstPageSingle: MutableRefObject<boolean>
 }
 interface ZipSetters {
   setIndices: Dispatch<SetStateAction<number[]>>
@@ -80,11 +81,9 @@ const updateZip = async (
   swipeDirection?: SwipeDirection,
 ) => {
   const request = ++refs.imageRequest.current
-  const indices = visibleIndices(
-    lead,
-    archive.names.length,
-    refs.columns.current,
-  )
+  const columns = refs.columns.current
+  const count = refs.firstPageSingle.current && lead === 0 ? 1 : columns
+  const indices = visibleIndices(lead, archive.names.length, count)
   const urls = await Promise.all(indices.map((index) => archive.getUrl(index)))
   if (
     refs.generation.current !== id ||
@@ -133,13 +132,22 @@ const scheduleTurn = (
         await (next ? current.epub.next() : current.epub.prev())
         return
       }
+      const currentLead = refs.lead.current
+      const cover =
+        refs.firstPageSingle.current &&
+        refs.columns.current === 2 &&
+        currentLead === 0
+      const step = cover ? 1 : refs.columns.current
+      const minimumPreviousLead =
+        !next &&
+        refs.firstPageSingle.current &&
+        refs.columns.current === 2 &&
+        currentLead > 1
+          ? 1
+          : 0
       const lead = next
-        ? nextLead(
-            refs.lead.current,
-            current.archive.names.length,
-            refs.columns.current,
-          )
-        : Math.max(0, refs.lead.current - refs.columns.current)
+        ? nextLead(currentLead, current.archive.names.length, step)
+        : Math.max(minimumPreviousLead, currentLead - step)
       if (lead === refs.lead.current) return
       refs.animation.current?.cancel()
       refs.animation.current = null
@@ -161,6 +169,7 @@ interface ReaderStageProps {
   loading: boolean
   error: string
   setError: Dispatch<SetStateAction<string>>
+  cover: boolean
 }
 
 const ReaderStage = ({
@@ -174,6 +183,7 @@ const ReaderStage = ({
   loading,
   error,
   setError,
+  cover,
 }: ReaderStageProps) => (
   <main
     className={styles.pages}
@@ -182,7 +192,13 @@ const ReaderStage = ({
     style={{ padding }}
   >
     {archive && (
-      <div className={styles.imagePair} style={{ gap: gutter }}>
+      <div
+        className={styles.imagePair}
+        style={{
+          gap: gutter,
+          width: cover ? `calc((100% - ${gutter}px) / 2)` : undefined,
+        }}
+      >
         {urls.map((url, index) => (
           <img
             key={indices[index]}
@@ -503,6 +519,8 @@ export const Reader = ({
   const imageRequest = useRef(0)
   const activeRef = useRef(active)
   activeRef.current = active
+  const firstPageSingleRef = useRef(settings.firstPageSingle)
+  firstPageSingleRef.current = settings.firstPageSingle
   const [columns, setColumns] = useState<1 | 2>(1)
   const [archive, setArchive] = useState<Archive | null>(null)
   const [urls, setUrls] = useState<string[]>([])
@@ -526,6 +544,7 @@ export const Reader = ({
     swipe,
     imageRequest,
     active: activeRef,
+    firstPageSingle: firstPageSingleRef,
   }
   const setters: ZipSetters = {
     setIndices,
@@ -626,6 +645,7 @@ export const Reader = ({
         loading={loading}
         error={error}
         setError={setError}
+        cover={settings.firstPageSingle && columns === 2 && currentIndex === 0}
       />
     </section>
   )

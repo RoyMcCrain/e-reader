@@ -73,7 +73,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await page.addInitScript(() => {
       localStorage.setItem(
         'shiori.reader.settings.v1',
-        JSON.stringify({ spread: 'single' }),
+        JSON.stringify({ spread: 'single', firstPageSingle: false }),
       )
     })
     await page.goto('/')

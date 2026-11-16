@@ -19,6 +19,16 @@ test('standalone config persists preferences across reload and recovers malforme
 }) => {
   await page.goto('/config')
   await page.waitForLoadState('networkidle')
+  const firstPageSingle = page.getByRole('checkbox', {
+    name: /先頭ページを表紙として1枚表示/,
+  })
+  await expect(firstPageSingle).toBeChecked()
+  await firstPageSingle.uncheck()
+  await expect(firstPageSingle).not.toBeChecked()
+  await page.reload()
+  await expect(firstPageSingle).not.toBeChecked()
+  await page.getByRole('button', { name: '初期設定に戻す' }).click()
+  await expect(firstPageSingle).toBeChecked()
   await page.getByLabel('文字サイズの値').click()
   await page.getByLabel('文字サイズの値').press('Control+A')
   await page.keyboard.type('27')
