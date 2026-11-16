@@ -33,6 +33,20 @@ bun run test:e2e
 
 本番ビルドのローカル確認は `bun run preview`（`http://localhost:4173`）です。
 
+## Mutation testing
+
+AI 生成テストを含む reader のユニットテストが、実際のコード変更を検出できるかを StrykerJS で確認します。対象は `src/lib/reader/layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts` です。
+
+```bash
+bun run test:mutation
+# 1 モジュールに絞る例
+bun run test:mutation --mutate src/lib/reader/layout.ts
+```
+
+各 mutant ごとに command runner が Bun で reader のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。E2E と server テストは含まず、通常の test や CI には mutation testing の自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
+
+`Survived` は、挙動を検証するテストが不足していないか、または等価 mutant ではないかを調査する手掛かりです。Mutation score だけでテスト品質は保証されず、100% を必須にはしません。
+
 ## 読む・設定する
 
 - 「ファイルを選ぶ」から EPUB または画像 ZIP を開きます。

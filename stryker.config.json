@@ -1,0 +1,23 @@
+{
+	"$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+	"testRunner": "command",
+	"commandRunner": {
+		"command": "bun test --no-env-file ./src/lib/reader"
+	},
+	"coverageAnalysis": "off",
+	"mutate": [
+		"src/lib/reader/layout.ts",
+		"src/lib/reader/progress.ts",
+		"src/lib/reader/preferences.ts",
+		"src/lib/reader/zip-entries.ts"
+	],
+	"ignorePatterns": [
+		"**",
+		"!package.json",
+		"!tsconfig.json",
+		"!src/lib/reader/*.ts"
+	],
+	"concurrency": 2,
+	"cleanTempDir": "always",
+	"reporters": ["clear-text", "progress", "html", "json"]
+}

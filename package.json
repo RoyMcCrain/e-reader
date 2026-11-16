@@ -14,6 +14,7 @@
 		"preview": "./node_modules/.bin/node ./node_modules/vite/bin/vite.js preview --host 0.0.0.0",
 		"test": "bun test",
 		"test:e2e": "bunx --bun --no-install playwright test",
+		"test:mutation": "./node_modules/.bin/node ./node_modules/@stryker-mutator/core/bin/stryker.js run",
 		"test:server": "./node_modules/.bin/node --test tests/server/*.integration.ts",
 		"typecheck": "bunx --bun --no-install tsc --noEmit"
 	},
@@ -28,6 +29,7 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "1.65.1",
+		"@stryker-mutator/core": "10.1.1",
 		"@types/bun": "^1.4.4",
 		"@types/react": "^19.2.0",
 		"@types/react-dom": "^19.2.0",
