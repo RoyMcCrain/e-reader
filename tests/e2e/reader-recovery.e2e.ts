@@ -46,6 +46,9 @@ test('an invalid file keeps its fatal alert and disables navigation', async ({
     buffer: Buffer.from('not a valid ZIP'),
   })
   await expect(page.getByRole('alert')).toBeVisible()
+  await expect(
+    page.getByRole('progressbar', { name: '読書の進捗' }),
+  ).toHaveCount(0)
   await expect(page.getByRole('button', { name: '前へ' })).toBeDisabled()
   await expect(page.getByRole('button', { name: '次へ' })).toBeDisabled()
 })
