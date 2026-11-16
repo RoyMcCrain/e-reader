@@ -18,7 +18,6 @@ export default defineConfig({
 			ACCESS_TEAM_DOMAIN: 'blog-ao0-pages.cloudflareaccess.com',
 			ACCESS_AUD:
 				'943508cde46e7c9ea10fa8a59b94daa182009b2c0e50a741a2fd55b0d12233b9',
-			ACCESS_ALLOWED_EMAIL: 'me@rrrr.dev',
 		},
 	},
 })

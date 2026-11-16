@@ -41,14 +41,25 @@ EPUB は現在のページが指に追従し、短いスワイプや中断時に
 
 ## 非公開クラウド書庫
 
-- ホスト名: `reader.rrrr.dev`。Cloudflare Accessのメール認証で `me@rrrr.dev` のみを許可します。
+- ホスト名: `reader.rrrr.dev`。Cloudflare Accessのメール認証とWorkerの許可メール設定を、同じ所有者だけに限定します。Accessポリシーと許可メール値はCloudflare上で非公開に設定してください。
 - R2バケット: `e-reader-books`。`r2.dev` の公開アクセスとR2カスタムドメインは使用しません。
 - `GET /api/books` が一覧、`GET /api/books/:id` がファイル取得です。取得時に一度ダウンロードし、既存リーダーで開きます。
 - APIはAccess JWTの署名・issuer・audience・期限・許可メールを検証します。メールを示すヘッダーだけでは認証しません。設定不足も拒否します。
 - レスポンスは `private, no-store`。ファイルはR2からストリームで返し、`attachment` と `nosniff` を設定します。
 - R2の `library.json` に `{ "books": [{ "id": "ファイルのSHA-256（64文字）", "name": "sample.epub", "format": "epub", "size": 1234 }] }` を保存します。実体は `books/<id>.<format>`。manifestにないIDは取得できません。書籍や実際のmanifestはリポジトリへ含めません。
-- `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`ACCESS_ALLOWED_EMAIL` は `void.config.ts` のWorker変数です。APIトークンやログインJWTをソース・ログへ保存しないでください。
+- `ACCESS_TEAM_DOMAIN` と `ACCESS_AUD` は `void.config.ts` のWorker変数です。`ACCESS_ALLOWED_EMAIL` は必須のCloudflare Worker Secretとして設定し、Accessポリシーの所有者と同じ値にします。値はソースやActionsに登録しません。APIトークンやログインJWTもソース・ログへ保存しないでください。
+- ローカルでは `cp env.example .env` で設定を作成し、`ACCESS_ALLOWED_EMAIL` にテスト用または所有者の値を設定します。`.env` はコミットしません。Voidが `.env.example` を拒否するため、テンプレートは `env.example` としています。
+- `env.ts` が許可メールを必須のSecretとして宣言します。Void CLIが検証する設定ファイルであり、Workerのグローバル型とDOM型の衝突を避けるため、アプリの `tsconfig.json` の対象には含めません。
+- 本番ではCloudflare接続を保存し、マスク入力でSecretを登録します。Secretは次回デプロイより前に存在する必要があります。以前に同名の平文Worker変数があれば、Cloudflare側でSecretへ置き換えてください。設定が一時的に欠けた場合、APIは閉じた状態になります。Accessを無効にしないでください。
 - `workers.dev` とプレビューURLは無効にします。初回は公開ルートのないWorkerをデプロイし、Access設定完了後にカスタムドメインを接続します。
+
+```bash
+bunx --no-install void connect --platform cloudflare
+bunx --no-install void secret put ACCESS_ALLOWED_EMAIL
+bunx --no-install void secret list
+```
+
+許可メール値はGitHub Actions secretにする必要はありません。Cloudflare管理・readiness用の3 secretsは、後述の「GitHub Actions CI/CD」を参照してください。
 
 保護済みホストへの再デプロイでは、Void CLIが `/__void/ready` を確認します。手動デプロイでは、readiness専用Accessアプリの許可ユーザーとして通常の対話端末でログインしてください。専用アプリはルートアプリと異なるaudienceを持つため、root URLではなくreadiness URLを指定します。
 
@@ -80,7 +91,9 @@ Cloudflare管理用のログイン（`bunx void cloudflare login`）と、アプ
 
 ## 公開リポジトリでの取り扱い
 
-本の実データ、実際の `library.json`、`.env` / `.dev.vars`、秘密鍵はコミットしません。Cloudflare のアカウントID、Access AUD、ドメイン、許可メールアドレスは運用設定として含まれますが、APIトークンや秘密鍵ではありません。ローカルの環境設定と書庫の作業ファイルは `.gitignore` で除外しています。
+現在のソースから許可メール値を除いていますが、この変更は過去のGit commitやPRに含まれた値を消去しません。過去の値は履歴・キャッシュ等から引き続き見える可能性があります。また、Gitのauthor metadataに含まれるメールアドレスを隠すものではありません。
+
+本の実データ、実際の `library.json`、`.env` / `.dev.vars`、秘密鍵、許可メール値はコミットしません。Cloudflare のアカウントID、Access AUD、ドメインは運用設定として含まれます。ローカルの環境設定と書庫の作業ファイルは `.gitignore` で除外しています。
 
 ## 制限
 

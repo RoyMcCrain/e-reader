@@ -62,7 +62,7 @@ after(async () => {
 
 const authorizedRequest = async (path: string, method = 'GET') => {
 	const now = Math.floor(Date.now() / 1000)
-	const token = await new SignJWT({ email: 'me@rrrr.dev' })
+	const token = await new SignJWT({ email: 'owner@example.com' })
 		.setProtectedHeader({ alg: 'RS256', kid: 'library-key' })
 		.setIssuer(issuer)
 		.setAudience('library-audience')
@@ -81,7 +81,7 @@ const env = () =>
 		BOOKS: bucket,
 		ACCESS_TEAM_DOMAIN: team,
 		ACCESS_AUD: 'library-audience',
-		ACCESS_ALLOWED_EMAIL: 'me@rrrr.dev',
+		ACCESS_ALLOWED_EMAIL: 'owner@example.com',
 	}) as LibraryEnv
 
 void test('lists private records and streams exact R2 bytes with safe headers', async () => {

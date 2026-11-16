@@ -11,7 +11,7 @@ const issuer = `https://${team}`
 const envValues = {
 	ACCESS_TEAM_DOMAIN: team,
 	ACCESS_AUD: 'test-audience',
-	ACCESS_ALLOWED_EMAIL: 'me@rrrr.dev',
+	ACCESS_ALLOWED_EMAIL: 'owner@example.com',
 }
 const miniflare = new Miniflare({
 	workers: [
@@ -59,7 +59,7 @@ const tokenFor = (
 ) => {
 	const now = Math.floor(Date.now() / 1000)
 	const payload =
-		claims.email === null ? {} : { email: claims.email ?? 'me@rrrr.dev' }
+		claims.email === null ? {} : { email: claims.email ?? 'owner@example.com' }
 	return new SignJWT(payload)
 		.setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
 		.setSubject('test-user')
@@ -101,7 +101,7 @@ void test('requires verified JWT and does not trust a spoofed email header', asy
 	)
 	const spoofed = await handleLibrary(
 		new Request('https://reader.rrrr.dev/api/books', {
-			headers: { 'Cf-Access-Email': 'me@rrrr.dev' },
+			headers: { 'Cf-Access-Email': 'owner@example.com' },
 		}),
 		testEnv(),
 	)
@@ -157,10 +157,19 @@ void test('service-style JWT without owner email cannot list or download books',
 	)
 })
 
-void test('fails closed when required environment is absent', async () => {
-	const response = await handleLibrary(
-		await requestFor('/api/books', await tokenFor()),
-		testEnv({ ACCESS_AUD: undefined }),
+void test('fails closed when required environment is absent or empty', async () => {
+	const token = await tokenFor()
+	const listRequest = await requestFor('/api/books', token)
+	const fileRequest = await requestFor(`/api/books/${'a'.repeat(64)}`, token)
+	const responses = await Promise.all([
+		handleLibrary(listRequest, testEnv({ ACCESS_AUD: undefined })),
+		handleLibrary(listRequest, testEnv({ ACCESS_ALLOWED_EMAIL: undefined })),
+		handleLibrary(fileRequest, testEnv({ ACCESS_ALLOWED_EMAIL: undefined })),
+		handleLibrary(listRequest, testEnv({ ACCESS_ALLOWED_EMAIL: '' })),
+		handleLibrary(fileRequest, testEnv({ ACCESS_ALLOWED_EMAIL: '' })),
+	])
+	assert.deepEqual(
+		responses.map(({ status }) => status),
+		[503, 503, 503, 503, 503],
 	)
-	assert.equal(response.status, 503)
 })
