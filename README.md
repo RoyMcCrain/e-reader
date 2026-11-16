@@ -22,11 +22,11 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 
 Oxlint は TypeScript の型安全性に加えて React Hooks / Compiler correctness と JSX accessibility を error として検査します。`any` と unsafe な型の利用は許可せず、外部データは `unknown` として検証してから扱います。これらの検査は誤りを減らす補助であり、すべての不具合やアクセシビリティ上の問題を検出する保証ではありません。
 
-例外は、意図した制御文字除去・拒否の正規表現、ブラウザー設定の hydration、native dialog の backdrop dismissal のように、個別の理由を隣接コメントで説明できる場合に限ります。テストでは、元のメソッドの復元や receiver を保持した呼び出しのための unbound-method 参照を限定的に許容します。例外は対象箇所だけに限定し、型安全性・React correctness のルール全体を無効化しません。
+例外は、意図した制御文字除去・拒否の正規表現、ブラウザー設定の hydration、native dialog の backdrop dismissal のように、個別の理由を隣接コメントで説明できる場合に限ります。読書進捗インジケーターはRTLの方向と独自のtrack/fill stylingを保つ単一の `div` に完全な `progressbar` ARIA 属性を付けるため、該当するprefer-tag-over-role検査だけを局所的に抑制しています。テストでは、元のメソッドの復元や receiver を保持した呼び出しのための unbound-method 参照を限定的に許容します。例外は対象箇所だけに限定し、型安全性・React correctness のルール全体を無効化しません。
 
 ## 操作
 
-左右端をクリック/タップしてページ移動。左から右へ読む LTR は右端が次、右から左へ読む RTL は左端が次です。←/→ は空間方向、PageDown / Space は次、PageUp / Shift+Space は前。スワイプは LTR では左へ、RTL では右へ動かすと次のページです。目次は EPUB のみで、ZIP は常に LTR です。読書画面の操作はアイコンにまとめています。
+左右端をクリック/タップしてページ移動。左から右へ読む LTR は右端が次、右から左へ読む RTL は左端が次です。←/→ は空間方向、PageDown / Space は次、PageUp / Shift+Space は前。スワイプは LTR では左へ、RTL では右へ動かすと次のページです。目次は EPUB のみで、ZIP は常に LTR です。読書画面の操作はアイコンにまとめています。画面下部には本の位置と進捗を表示し、ツールチップやスクリーンリーダーで現在位置、残りページ、進捗率を確認できます。これは開いている位置の表示であり、読書位置や本のデータを保存しません。
 
 EPUB は現在のページが指に追従し、短いスワイプや中断時には元の位置へ戻ります。OS の「視差効果を減らす」設定が有効な場合は動きを抑えます。
 

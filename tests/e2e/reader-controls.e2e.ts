@@ -99,6 +99,7 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
 		const headerBox = await header.boundingBox()
 		const stageBox = await stage.boundingBox()
 		const footerBox = await footer.boundingBox()
+		expect(footerBox!.height).toBeLessThanOrEqual(56)
 		expect(stageBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height)
 		expect(footerBox!.y).toBeGreaterThanOrEqual(stageBox!.y + stageBox!.height)
 		expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(720)
@@ -115,9 +116,55 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
 			'direction',
 			'ltr',
 		)
-		await expect(page.getByText(/\d+%|\d+\/\d+/)).toHaveAttribute('dir', 'ltr')
+		const progressbar = page.getByRole('progressbar', { name: '読書の進捗' })
+		await expect(progressbar).toBeVisible()
+		await expect(progressbar).toHaveAttribute('aria-valuetext', /本全体の目安/)
+		await expect(page.getByTitle(/本全体の目安/)).toBeVisible()
+		await expect(page.locator('footer').getByText(/^\d+%$/)).toHaveAttribute(
+			'dir',
+			'ltr',
+		)
+		await expect(footer).not.toContainText(
+			/前へ|次へ|本全体の目安|あと\d+ページ|最終ページ/,
+		)
+		await expect(previous).toHaveText('')
+		await expect(next).toHaveText('')
 		await next.click()
 		await expect.poll(() => content(page)).toContain('Middle content')
+		await next.click()
+		await expect.poll(() => content(page)).toContain('Ending content')
+		await expect(progressbar).toHaveAttribute(
+			'aria-valuetext',
+			/100%、最終ページ/,
+		)
+		await expect(footer).toHaveText('100%')
+		const geometry = await page.evaluate(() => {
+			const footer = document.querySelector('footer')!
+			const progress = footer.querySelector('[role="progressbar"]')!
+			const buttons = [...footer.querySelectorAll('button')]
+			const bounds = (element: Element) => {
+				const rect = element.getBoundingClientRect()
+				return { left: rect.left, right: rect.right }
+			}
+			return {
+				progress: bounds(progress),
+				buttons: buttons.map((button) => ({
+					...bounds(button),
+					label: button.innerText,
+					wraps: button.scrollHeight > button.clientHeight,
+				})),
+			}
+		})
+		for (const button of geometry.buttons) {
+			expect(button.wraps).toBe(false)
+			expect(
+				button.left >= geometry.progress.right ||
+					button.right <= geometry.progress.left,
+			).toBe(true)
+		}
+		await previous.click()
+		await expect.poll(() => content(page)).toContain('Middle content')
+		await expect(progressbar).not.toHaveAttribute('aria-valuetext', /100%/)
 		const closeBox = await header
 			.getByRole('button', { name: '本を閉じる' })
 			.boundingBox()
@@ -139,6 +186,10 @@ test('LTR and RTL navigation layout, footer geometry, and successful turns', asy
 				(element) => element.scrollWidth > element.clientWidth,
 			),
 		).toBe(true)
+		const fill = progressbar.locator('span')
+		await page.emulateMedia({ reducedMotion: 'reduce' })
+		await expect(fill).toHaveCSS('transition-duration', '0s')
+		await page.emulateMedia({ reducedMotion: 'no-preference' })
 		await page.setViewportSize({ width: 1280, height: 800 })
 		await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 1280)
 		await page.goto('/')

@@ -14,6 +14,7 @@ import {
 } from 'react'
 
 import { Icon } from '#components/reader/Icon'
+import { ReaderProgress } from '#components/reader/ReaderProgress'
 import { openImageArchive } from '#lib/reader/archive'
 import { openEpub } from '#lib/reader/epub'
 import type { EpubSession } from '#lib/reader/epub-types'
@@ -368,6 +369,8 @@ const useOpenFile = ({
 		setLoading(true)
 		setters.setError('')
 		setters.setProgress(0)
+		setters.setAtStart(true)
+		setters.setAtEnd(false)
 		setArchive(null)
 		setUrls([])
 		setters.setIndices([])
@@ -435,18 +438,6 @@ const navigationDisabled = (
 	atBoundary: boolean,
 	fatalError: boolean,
 ) => loading || atBoundary || fatalError
-
-const progressText = (
-	count: number,
-	currentIndex: number,
-	indices: number[],
-	progress: number,
-) => {
-	if (!count) return `${progress}%`
-	const last = indices.at(-1)
-	const range = last !== undefined && indices.length > 1 ? `–${last + 1}` : ''
-	return `${currentIndex + 1}${range}/${count}`
-}
 
 interface ReaderControlsProps {
 	onClose: () => void
@@ -532,11 +523,18 @@ const ReaderControls = ({
 				)}
 				onClick={() => turn(false)}
 			>
-				<Icon name={direction === 'rtl' ? 'next' : 'prev'} /> 前へ
+				<Icon name={direction === 'rtl' ? 'next' : 'prev'} />
 			</button>
-			<span className={styles.progressLabel} dir="ltr">
-				{progressText(count, currentIndex, indices, progress)}
-			</span>
+			<ReaderProgress
+				count={count}
+				currentIndex={currentIndex}
+				indices={indices}
+				progress={progress}
+				atEnd={atEnd}
+				loading={loading}
+				unavailable={Boolean(error) && !hasSession}
+				direction={direction}
+			/>
 			<button
 				aria-label="次へ"
 				title="次へ"
@@ -547,7 +545,7 @@ const ReaderControls = ({
 				)}
 				onClick={() => turn(true)}
 			>
-				<Icon name={direction === 'rtl' ? 'prev' : 'next'} /> 次へ
+				<Icon name={direction === 'rtl' ? 'prev' : 'next'} />
 			</button>
 		</footer>
 		{/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- native dialog backdrop clicks dismiss; Escape and the close button provide keyboard dismissal. */}
