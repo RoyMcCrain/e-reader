@@ -47,20 +47,24 @@ const validClaims = (
 	)
 }
 
-export const checkAccess = async (request: Request, env: AccessEnv) => {
+export const verifiedSubject = async (request: Request, env: AccessEnv) => {
 	const settings = accessSettings(env)
-	if (!settings) return 503
+	if (!settings) return { status: 503 as const }
 	const token = request.headers.get(accessHeader)
-	if (!token) return 401
+	if (!token) return { status: 401 as const }
 	try {
 		const { payload } = await jwtVerify(token, getKeySet(settings.issuer), {
 			issuer: settings.issuer,
 			audience: settings.audience,
 			algorithms: ['RS256'],
 		})
-		if (!validClaims(payload)) return 401
-		return payload.email === settings.email ? 200 : 403
+		if (!validClaims(payload)) return { status: 401 as const }
+		if (payload.email !== settings.email) return { status: 403 as const }
+		return { status: 200 as const, subject: payload.sub as string }
 	} catch {
-		return 401
+		return { status: 401 as const }
 	}
 }
+
+export const checkAccess = async (request: Request, env: AccessEnv) =>
+	(await verifiedSubject(request, env)).status

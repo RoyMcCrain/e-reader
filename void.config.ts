@@ -10,7 +10,7 @@ export default defineConfig({
 		routes: [{ pattern: 'reader.rrrr.dev', custom_domain: true }],
 		r2_buckets: [{ binding: 'BOOKS', bucket_name: 'e-reader-books' }],
 	},
-	inference: { bindings: { storage: 'BOOKS' } },
+	inference: { bindings: { storage: 'BOOKS', db: true } },
 	worker: {
 		compatibility_date: '2026-11-14',
 		compatibility_flags: ['nodejs_compat'],

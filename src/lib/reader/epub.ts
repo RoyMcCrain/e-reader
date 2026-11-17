@@ -130,6 +130,29 @@ const isFirstPage = (book: EpubBook, pane: Pane) =>
 	book.rendition.layout === 'pre-paginated'
 		? sectionIndex(book, pane) === nextSection(book, -1, 1)
 		: Boolean(rendererOf(pane).atStart)
+const validCfi = (view: FoliateViewElement, book: EpubBook, cfi: string) => {
+	if (!/^epubcfi\(.+\)$/u.test(cfi)) return false
+	try {
+		const target = view.resolveCFI(cfi)
+		return (
+			Number.isInteger(target.index) &&
+			target.index >= 0 &&
+			target.index < book.sections.length
+		)
+	} catch {
+		return false
+	}
+}
+const restoreInitialLocation = async (
+	session: EpubSession,
+	options: EpubOptions,
+	closed: () => boolean,
+) => {
+	if (!options.initialCFI) return false
+	const restored = await session.restore(options.initialCFI)
+	cancelled(options, closed)
+	return !restored
+}
 const createBookLoader = async (
 	reader: ZipReader<BlobReader>,
 	options: EpubOptions,
@@ -177,6 +200,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 	const opening = new AbortController()
 	let active = options.active
 	let activeGeneration = 0
+	let navigationEpoch = 0
 	let queued = Promise.resolve()
 	let settings = options.settings
 	let columns = options.columns
@@ -242,8 +266,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		})
 		return propagate ? task : queued
 	}
-	const rememberAnchor = () => {
-		const cfi = panes[0]?.view.lastLocation?.cfi
+	const rememberAnchor = (cfi = panes[0]?.view.lastLocation?.cfi) => {
 		if (cfi) readingAnchor = collapse(cfi)
 	}
 	const layout = async (preserve = true) => {
@@ -429,6 +452,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		return Math.max(1, (rendererOf(peer).pages ?? 2) - 2) === 1 ? 1 : 2
 	}
 	const turn = (forward: boolean) => {
+		navigationEpoch += 1
 		const generation = activeGeneration
 		return enqueue(async () => {
 			if (!active || generation !== activeGeneration) return
@@ -438,10 +462,10 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 				isFirstPage(book!, panes[0])
 			if (columns === 2 && panes.length > 1) {
 				if (cover) {
-					if (forward) await stepOne(panes[0], true)
-					else return
+					if (!forward || !(await stepOne(panes[0], true))) return
 					await syncPeer()
 					rememberAnchor()
+					if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
 					notify()
 					return
 				}
@@ -452,6 +476,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 						? nextSection(book!, sectionIndex(book!, panes[1]), 1) === undefined
 						: rendererOf(panes[1]).atEnd)
 				if (forward && peerAtEnd) return
+				let moved = false
 				if (book?.rendition.layout === 'pre-paginated') {
 					const direction = forward ? 1 : -1
 					const current = sectionIndex(book, panes[0])
@@ -469,8 +494,10 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 							? first
 							: undefined
 					const target = boundaryTarget ?? second ?? first
-					if (target !== undefined)
+					if (target !== undefined) {
 						await rendererOf(panes[0]).goTo?.({ index: target })
+						moved = true
+					}
 				} else {
 					const primary = rendererOf(panes[0])
 					const steps =
@@ -480,12 +507,16 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 									primary.page ?? 1,
 								)
 							: 2
-					for (let i = 0; i < steps; i++)
+					for (let i = 0; i < steps; i++) {
 						if (!(await stepOne(panes[0], forward))) break
+						moved = true
+					}
 				}
+				if (!moved) return
 				await syncPeer()
-			} else await stepOne(panes[0], forward)
+			} else if (!(await stepOne(panes[0], forward))) return
 			rememberAnchor()
+			if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
 			notify()
 		})
 	}
@@ -494,12 +525,20 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 			const href = (event as CustomEvent<{ href?: string }>).detail?.href
 			if (!href) return
 			event.preventDefault()
+			navigationEpoch += 1
 			void enqueue(async () => {
+				const previous = panes[0].view.lastLocation?.cfi
 				await panes[0].view.goTo(href)
 				await awaitPaneLayout(panes[0], opening.signal)
 				cancelled(options, () => closed)
+				if (
+					!panes[0].view.lastLocation?.cfi ||
+					panes[0].view.lastLocation.cfi === previous
+				)
+					return
 				rememberAnchor()
 				if (columns === 2) await syncPeer()
+				if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
 				notify()
 			})
 		})
@@ -519,15 +558,100 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		toc: [],
 		next: () => turn(true),
 		prev: () => turn(false),
-		goTo: (href) =>
-			enqueue(async () => {
+		goTo: (href) => {
+			navigationEpoch += 1
+			return enqueue(async () => {
+				const previous = panes[0].view.lastLocation?.cfi
 				await panes[0].view.goTo(href)
 				await awaitPaneLayout(panes[0], opening.signal)
 				cancelled(options, () => closed)
+				if (
+					!panes[0].view.lastLocation?.cfi ||
+					panes[0].view.lastLocation.cfi === previous
+				)
+					return
 				rememberAnchor()
 				if (columns === 2) await syncPeer()
+				if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
 				notify()
-			}),
+			})
+		},
+		untouched: () => navigationEpoch === 0,
+		checkpoint: () => ({
+			cfi: readingAnchor ?? panes[0]?.view.lastLocation?.cfi,
+			epoch: navigationEpoch,
+		}),
+		markTouched: () => {
+			navigationEpoch += 1
+		},
+		restore: (cfi, onlyIfUntouched = false, expectedEpoch) => {
+			const epoch = expectedEpoch ?? navigationEpoch
+			let restored = false
+			return enqueue(async () => {
+				if (epoch !== navigationEpoch || (onlyIfUntouched && epoch !== 0))
+					return
+				if (!book || !validCfi(panes[0].view, book, cfi)) return
+				const target = panes[0].view.resolveCFI(cfi)
+				const priorAnchor = readingAnchor ?? panes[0].view.lastLocation?.cfi
+				const restorePrior = async () => {
+					if (!priorAnchor) return
+					readingAnchor = priorAnchor
+					await panes[0].view.goTo(priorAnchor)
+					await awaitPaneLayout(panes[0], opening.signal)
+					cancelled(options, () => closed)
+					if (columns === 2) await syncPeer()
+				}
+				try {
+					await panes[0].view.goTo(cfi)
+					await awaitPaneLayout(panes[0], opening.signal)
+				} catch {
+					cancelled(options, () => closed)
+					await restorePrior()
+					return
+				}
+				cancelled(options, () => closed)
+				if (epoch !== navigationEpoch) {
+					await restorePrior()
+					return
+				}
+				const actual = panes[0].view.lastLocation?.cfi
+				const content = panes[0].view.renderer?.getContents()[0]
+				const fixed = book.rendition.layout === 'pre-paginated'
+				if (
+					!actual ||
+					panes[0].view.resolveCFI(actual).index !== target.index ||
+					(!fixed && (!content || content.index !== target.index))
+				) {
+					await restorePrior()
+					return
+				}
+				try {
+					if (content) {
+						const point = target.anchor(content.doc)
+						if (!content.doc.body.contains(point.startContainer)) {
+							await restorePrior()
+							return
+						}
+					} else if (!fixed) {
+						await restorePrior()
+						return
+					}
+				} catch {
+					if (!fixed) {
+						await restorePrior()
+						return
+					}
+				}
+				readingAnchor = collapse(cfi)
+				if (columns === 2) await syncPeer()
+				if (epoch !== navigationEpoch) {
+					await restorePrior()
+					return
+				}
+				notify()
+				restored = true
+			}).then(() => restored)
+		},
 		configure: (nextSettings, nextColumns) => {
 			if (
 				JSON.stringify(settings) === JSON.stringify(nextSettings) &&
@@ -628,6 +752,12 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		await awaitPaneLayout(primaryPane, opening.signal)
 		cancelled(options, () => closed)
 		rememberAnchor()
+		session.initialRestoreFailed = await restoreInitialLocation(
+			session,
+			options,
+			() => closed,
+		)
+		cancelled(options, () => closed)
 		panes[0].view.addEventListener('relocate', notify)
 		if (active)
 			removeHostInput = bindHostInput(
@@ -655,7 +785,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 			})
 		})
 		resize.observe(options.host)
-		await enqueue(() => layout(false), true)
+		await enqueue(() => layout(Boolean(readingAnchor)), true)
 		cancelled(options, () => closed)
 		notify()
 		return session

@@ -21,10 +21,11 @@ bun run lint
 bun run format:check
 bun test
 bun run test:r2
+bun run test:d1
 bun run build
 ```
 
-`tests/e2e` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。server の高速な Bun テストは認証ルールと書庫 API の契約を検証し、`bun run test` で実行します。`bun run test:r2` は Node.js 上の Miniflare のローカルR2で、一覧・ダウンロードの接続を確認します。テストファイルは `.test.ts` 命名を使います。デプロイ処理とそのテストも `src/deploy` にあります。
+`tests/e2e` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。server の高速な Bun テストは認証ルールと書庫 API の契約を検証し、`bun run test` で実行します。`bun run test:r2` と `bun run test:d1` は Node.js 上の Miniflare を使うローカル R2/D1 の接続テストです。テストファイルは `.test.ts` 命名を使います。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
 
 ブラウザーテストは Chromium を初回インストールしてから実行します。
 
@@ -47,7 +48,7 @@ bun run test:mutation --mutate src/lib/reader/layout.ts
 bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
 ```
 
-各 mutant ごとに command runner が Bun で reader と server のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。認証・書庫 API の契約テストは Bun、ローカルR2を使う接続テストは `bun run test:r2` で別々に実行します。Mutation testing は R2 接続テストや E2E を実行せず、通常の test や CI に自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
+各 mutant ごとに command runner が Bun で reader と server のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。認証・書庫 API の契約テストは Bun、ローカル R2/D1 を使うストレージ接続テストはそれぞれ `bun run test:r2` と `bun run test:d1` で別々に実行します。Mutation testing は R2/D1 接続テストや E2E を実行せず、通常の test や CI に自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
 
 `Survived` は、挙動を検証するテストが不足していないか、または等価 mutant ではないかを調査する手掛かりです。Mutation score だけでテスト品質は保証されず、100% を必須にはしません。
 
@@ -57,7 +58,9 @@ bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
 - 画面左右のクリック／タップ、スワイプ、← / →、PageDown / Space、PageUp / Shift+Space でページを移動します。
 - 1秒無操作でフッター、2秒無操作でヘッダーを隠します。ページ移動時は待たずに両方を隠し、マウス移動・タップ・キー操作で再表示します。
 - 歯車から文字サイズ、行間、余白、表示方法などを変更できます。設定はこのブラウザーに保存されます。
-- 本のデータや読書位置はブラウザーに保存しません。再読み込み後は本を選び直してください。
+- EPUB の読書位置だけを IndexedDB に保存します。本のデータは保存しないため、再読み込み後は同じファイルを選び直してください。
+- 認証済みの場合、読書位置を D1 と同期します。同期はオンライン復帰時などに再試行し、競合時は端末または別端末の位置を選べます。認証が必要な場合はログイン後に同期します。
+- EPUB 本文や ZIP はアップロードせず、Service Worker によるファイルキャッシュも行いません。
 
 ## 非公開クラウド書庫
 
@@ -67,9 +70,9 @@ bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
 
 ## デプロイ
 
-`main` の CI が成功すると本番へ自動デプロイされます。プルリクエストや他ブランチからはデプロイしません。CI は GitHub の `production` Environment に次の Actions secrets を必要とします。
+`main` の CI が成功すると本番へ自動デプロイされます。プルリクエストや他ブランチからはデプロイしません。CI はコミット済みの D1 マイグレーションをローカルで検証します。本番では `void deploy` が Worker の公開前に未適用の D1 マイグレーションを適用し、失敗時は公開を中止します。CI は GitHub の `production` Environment に次の Actions secrets を必要とします。
 
-- `CLOUDFLARE_API_TOKEN` — Worker デプロイ用。
+- `CLOUDFLARE_API_TOKEN` — Worker デプロイと D1 の作成・編集・マイグレーションに必要な権限を持つ API トークン。
 - `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` — `/__void/ready` 専用の readiness 認証用。書庫 API の認証には使いません。
 
 ## 制限と取り扱い

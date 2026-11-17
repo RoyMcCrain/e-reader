@@ -14,4 +14,5 @@ if [[ -z "${CF_ACCESS_CLIENT_SECRET:-}" ]]; then
 	exit 1
 fi
 
+# Void applies pending D1 migrations before publishing the Worker.
 bunx --no-install void deploy --platform cloudflare
