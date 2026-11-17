@@ -15,7 +15,7 @@
 		"test": "bun test",
 		"test:e2e": "bunx --bun --no-install playwright test",
 		"test:mutation": "./node_modules/.bin/node ./node_modules/@stryker-mutator/core/bin/stryker.js run",
-		"test:server": "./node_modules/.bin/node --test tests/server/*.integration.ts",
+		"test:r2": "./node_modules/.bin/node --test src/server/library-r2.test.ts",
 		"typecheck": "bunx --bun --no-install tsc --noEmit"
 	},
 	"dependencies": {

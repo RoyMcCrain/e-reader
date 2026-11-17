@@ -16,9 +16,11 @@
 	"ignorePatterns": [
 		"**",
 		"!package.json",
+		"!bunfig.toml",
 		"!tsconfig.json",
 		"!src/lib/reader/*.ts",
 		"!src/server/*.ts",
+		"src/server/library-r2.test.ts",
 		"!src/lib/library/types.ts"
 	],
 	"concurrency": 2,

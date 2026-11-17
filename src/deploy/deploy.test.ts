@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+	copyFile,
+	mkdtemp,
+	mkdir,
+	readFile,
+	rm,
+	writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
 const workflow = Bun.YAML.parse(
-	await readFile('.github/workflows/ci-cd.yml', 'utf8'),
+	await readFile(
+		new URL('../../.github/workflows/ci-cd.yml', import.meta.url),
+		'utf8',
+	),
 ) as {
 	jobs: { deploy: { steps: { env?: Record<string, string>; run?: string }[] } }
 }
@@ -22,7 +32,10 @@ const runDeploy = async (
 	const directory = await mkdtemp(join(tmpdir(), 'e-reader-deploy-'))
 	const bin = join(directory, 'bin')
 	const log = join(directory, 'calls')
+	const deployScript = join(directory, 'src/deploy/deploy.sh')
 	await mkdir(bin)
+	await mkdir(join(directory, 'src/deploy'), { recursive: true })
+	await copyFile(new URL('./deploy.sh', import.meta.url), deployScript)
 	await writeFile(
 		join(bin, 'bunx'),
 		`#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "$DEPLOY_CALLS"\nexit "${deployStatus}"\n`,
