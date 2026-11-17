@@ -113,3 +113,35 @@ bun --no-env-file run test:mutator --include src/server/library.ts --reporter ag
 DRM には対応していません。EPUB の表示はブラウザーの対応範囲に依存し、出版社ごとの特殊な CSS を完全に再現する保証はありません。書庫画面からの本のアップロード・削除には対応していません。
 
 実際の本や `library.json`、`.env`、トークン、実際の許可メールアドレスはコミットしないでください。
+
+## 本棚（Bookshelf）
+
+`/bookshelf` では最近追加した本とシリーズ別の棚を表示し、タイトル・ファイル名・シリーズを自由入力で検索し、形式で絞り込み、並べ替えができます。任意の `series` と `uploadedAt` は既存の R2 `library.json` にアップロード担当者が設定します。書庫 API は `uploadedAt` を UTC の `Z` 形式（`YYYY-MM-DDTHH:mm:ssZ`、または秒の小数1〜3桁）で受け付けます。アップロード UI やメタデータの書き戻し機能は追加していません。
+
+```json
+{
+	"books": [
+		{
+			"id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			"name": "sample.epub",
+			"format": "epub",
+			"size": 12345,
+			"series": "星の旅",
+			"uploadedAt": "2025-03-04T05:06:07Z",
+			"hasCover": true
+		}
+	]
+}
+```
+
+`series` のない本は未設定の棚に入り、`uploadedAt` のない本は最近追加した本の欄から除外されます（全件を新しい順に並べる場合は末尾）。既存の4項目だけのレコードも引き続き利用できます。
+
+### 表紙サムネイル（手動）
+
+表紙は任意です。`hasCover` のない本、または `false` の本は従来どおり色付きの仮の表紙を表示し、表紙の取得は行いません。表紙を付けるには次の順で手作業で準備します。
+
+1. EPUB の表紙、または ZIP の先頭画像を用意し、幅 480px 程度に縮小して WebP にします（最大 512 KiB、1 バイト以上）。
+2. 非公開の R2 バケット（`BOOKS`）に `covers/<id>.webp` として置きます。`<id>` は本の `id`（64桁の小文字16進数）です。
+3. 置いた後で、同じ本の `library.json` のエントリに `"hasCover": true` を追加します。
+
+表紙は `GET /api/books/<id>/cover` で同一オリジンから配信され、本の EPUB や ZIP は表紙の取得時に読みません。Cloudflare Access で保護され、`Cache-Control: private, no-store` で返します。既存の本は表紙を後から追加しても、追加しなくても構いません。表紙ファイルが壊れていても画面には仮の表紙を表示します。

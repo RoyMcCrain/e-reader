@@ -36,13 +36,29 @@ const AppShell = () => {
 						active={active}
 						onClose={() => {
 							setFile(undefined)
-							if (location.pathname !== '/') void navigate({ to: '/' })
+							if (
+								location.pathname !== '/' &&
+								location.pathname !== '/bookshelf'
+							)
+								void navigate({ to: '/' })
 						}}
-						onSettings={() => void navigate({ to: '/config' })}
+						onSettings={() =>
+							void navigate({
+								to: '/config',
+								search: {
+									from:
+										location.pathname === '/bookshelf'
+											? '/bookshelf'
+											: undefined,
+								},
+							})
+						}
 					/>
 				</div>
 			)}
-			<Outlet />
+			<div hidden={Boolean(file && location.pathname === '/bookshelf')}>
+				<Outlet />
+			</div>
 		</>
 	)
 }

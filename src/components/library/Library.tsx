@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
+import { Bookshelf } from '#components/library/Bookshelf'
 import { useReaderApp } from '#components/providers/ReaderProvider'
+import { validBookMetadata } from '#lib/library/metadata'
 import type { CloudBook } from '#lib/library/types'
 
 import styles from '#components/library/Library.module.css'
 
 interface LibraryProps {
 	cancelPending: RefObject<(() => void) | null>
+	presentation?: 'list' | 'bookshelf'
 }
 
 const formatSize = (size: number) =>
@@ -28,7 +31,8 @@ const validBook = (value: unknown): value is CloudBook => {
 		validId(book.id) &&
 		typeof book.name === 'string' &&
 		validFormat(book.format) &&
-		validSize(book.size)
+		validSize(book.size) &&
+		validBookMetadata(book)
 	)
 }
 
@@ -195,7 +199,10 @@ const openCloudBook = async (
 	}
 }
 
-export const Library = ({ cancelPending }: LibraryProps) => {
+export const Library = ({
+	cancelPending,
+	presentation = 'list',
+}: LibraryProps) => {
 	const { setFile } = useReaderApp()
 	const [books, setBooks] = useState<CloudBook[]>([])
 	const [loading, setLoading] = useState(true)
@@ -221,6 +228,24 @@ export const Library = ({ cancelPending }: LibraryProps) => {
 	const openBook = (book: CloudBook) => {
 		if (!busyId) void openCloudBook(book, actions, cancelPending)
 	}
+
+	if (presentation === 'bookshelf')
+		return (
+			<Bookshelf
+				books={books}
+				loading={loading}
+				listError={listError}
+				retry={() => {
+					listController.current?.abort()
+					const controller = new AbortController()
+					listController.current = controller
+					void loadBooks(setBooks, setListError, setLoading, controller)
+				}}
+				busyId={busyId}
+				openBook={openBook}
+				downloadError={downloadError}
+			/>
+		)
 
 	return (
 		<section className={styles.library} aria-labelledby="library-heading">

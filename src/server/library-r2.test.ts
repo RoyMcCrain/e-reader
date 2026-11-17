@@ -29,8 +29,21 @@ void test('lists and streams a book from Miniflare R2 with private headers', asy
 		const bucket = await miniflare.getR2Bucket('BOOKS')
 		const id = 'a'.repeat(64)
 		const bytes = new TextEncoder().encode('Café ebook bytes')
-		const book = { id, name: 'Café.epub', format: 'epub', size: bytes.length }
+		const book = {
+			id,
+			name: 'Café.epub',
+			format: 'epub',
+			size: bytes.length,
+			hasCover: true,
+		}
+		const cover = new Uint8Array(
+			Buffer.from(
+				'UklGRiwAAABXRUJQVlA4ICAAAABQAQCdASoCAAMAAgA0JQBOgC6gAP7w6MQh1VpbmxIAAA==',
+				'base64',
+			),
+		)
 		await bucket.put(`books/${id}.epub`, bytes)
+		await bucket.put(`covers/${id}.webp`, cover)
 		await bucket.put('library.json', JSON.stringify({ books: [book] }))
 		globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
 			const url = new URL(
@@ -78,6 +91,23 @@ void test('lists and streams a book from Miniflare R2 with private headers', asy
 		assert.equal(download.headers.get('Content-Length'), String(bytes.length))
 		assert.equal(download.headers.get('Cache-Control'), 'private, no-store')
 		assert.equal(download.headers.get('X-Content-Type-Options'), 'nosniff')
+		const thumbnail = await handleLibrary(
+			request(`/api/books/${id}/cover`),
+			env,
+		)
+		assert.equal(thumbnail.status, 200)
+		assert.deepEqual(new Uint8Array(await thumbnail.arrayBuffer()), cover)
+		assert.equal(thumbnail.headers.get('Content-Type'), 'image/webp')
+		assert.equal(thumbnail.headers.get('Content-Length'), String(cover.length))
+		assert.equal(
+			thumbnail.headers.get('Cross-Origin-Resource-Policy'),
+			'same-origin',
+		)
+		assert.equal(
+			thumbnail.headers.get('Content-Security-Policy'),
+			"default-src 'none'; sandbox",
+		)
+		assert.equal(thumbnail.headers.get('Cache-Control'), 'private, no-store')
 	} finally {
 		globalThis.fetch = originalFetch
 		await miniflare.dispose()

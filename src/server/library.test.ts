@@ -67,9 +67,22 @@ describe('handleLibrary', () => {
 			name: `${'x'.repeat(236)}.zip`,
 			size: Number.MAX_SAFE_INTEGER,
 		}
+		const metadataBook = {
+			...boundaryBook,
+			series: '  星の旅  ',
+			uploadedAt: '2025-03-04T05:06:07.08Z',
+			hasCover: true,
+			secret: 'omit',
+		}
+		const secondBook = {
+			...record,
+			id: 'b'.repeat(64),
+			series: '星'.repeat(240),
+			uploadedAt: '2025-03-04T05:06:07Z',
+		}
 		const fixture = bucketFor({
 			'library.json': JSON.stringify({
-				books: [{ ...boundaryBook, secret: 'omit' }],
+				books: [metadataBook, secondBook],
 			}),
 		})
 		const listed = await handleLibrary(
@@ -78,7 +91,17 @@ describe('handleLibrary', () => {
 		)
 		expect(listed.status).toBe(200)
 		expect(listed.headers.get('Content-Type')).toContain('application/json')
-		expect(await listed.json()).toEqual({ books: [boundaryBook] })
+		expect(await listed.json()).toEqual({
+			books: [
+				{
+					...boundaryBook,
+					series: '星の旅',
+					uploadedAt: '2025-03-04T05:06:07.08Z',
+					hasCover: true,
+				},
+				secondBook,
+			],
+		})
 		failureHeaders(listed)
 
 		const empty = await handleLibrary(
@@ -86,6 +109,15 @@ describe('handleLibrary', () => {
 			envFor(bucketFor().bucket),
 		)
 		expect(await empty.json()).toEqual({ books: [] })
+
+		const legacy = await handleLibrary(
+			await authorized('/api/books'),
+			envFor(
+				bucketFor({ 'library.json': JSON.stringify({ books: [record] }) })
+					.bucket,
+			),
+		)
+		expect(await legacy.json()).toEqual({ books: [record] })
 	})
 
 	test('streams listed ZIP and EPUB objects with format-specific headers', async () => {
@@ -140,6 +172,14 @@ describe('handleLibrary', () => {
 			{ ...record, format: 'pdf', name: 'book.pdf' },
 			{ ...record, size: 0 },
 			{ ...record, size: Number.MAX_SAFE_INTEGER + 1 },
+			{ ...record, series: '   ' },
+			{ ...record, series: '星\u0085の旅' },
+			{ ...record, series: `s${'x'.repeat(240)}` },
+			{ ...record, uploadedAt: '2025-02-30T00:00:00Z' },
+			{ ...record, uploadedAt: '2025-01-01' },
+			{ ...record, uploadedAt: '2025-03-04T14:06:07+09:00' },
+			{ ...record, hasCover: 'yes' },
+			{ ...record, hasCover: null },
 			null,
 			42,
 		]
@@ -188,6 +228,104 @@ describe('handleLibrary', () => {
 			failureHeaders(result)
 		}
 		expect(fixture.gets).toEqual(['library.json'])
+	})
+
+	test('streams a marked cover at the byte limit without reading the book', async () => {
+		const webp = new Uint8Array(524_288).fill(7)
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({
+				books: [{ ...record, hasCover: true }],
+			}),
+			[`books/${id}.zip`]: new Uint8Array([9]),
+			[`covers/${id}.webp`]: webp,
+		})
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(result.status).toBe(200)
+		expect(new Uint8Array(await result.arrayBuffer())).toEqual(webp)
+		expect(result.headers.get('Content-Type')).toBe('image/webp')
+		expect(result.headers.get('Content-Length')).toBe('524288')
+		expect(result.headers.get('Cross-Origin-Resource-Policy')).toBe(
+			'same-origin',
+		)
+		expect(result.headers.get('Content-Security-Policy')).toBe(
+			"default-src 'none'; sandbox",
+		)
+		failureHeaders(result)
+		expect(fixture.gets).toEqual(['library.json', `covers/${id}.webp`])
+	})
+
+	test('withholds covers that are unmarked, unlisted, malformed, or outside the byte limit', async () => {
+		const marked = { ...record, hasCover: true }
+		const manifest = (book: typeof marked | typeof record) =>
+			JSON.stringify({ books: [book] })
+		const scenarios = [
+			{
+				name: 'unmarked',
+				book: record,
+				size: 4,
+				path: `/api/books/${id}/cover`,
+				reads: ['library.json'],
+			},
+			{
+				name: 'missing object',
+				book: marked,
+				size: undefined,
+				path: `/api/books/${id}/cover`,
+				reads: ['library.json', `covers/${id}.webp`],
+			},
+			{
+				name: 'oversized',
+				book: marked,
+				size: 524_289,
+				path: `/api/books/${id}/cover`,
+				reads: ['library.json', `covers/${id}.webp`],
+			},
+			{
+				name: 'empty',
+				book: marked,
+				size: 0,
+				path: `/api/books/${id}/cover`,
+				reads: ['library.json', `covers/${id}.webp`],
+			},
+			{
+				name: 'unlisted',
+				book: marked,
+				size: 4,
+				path: `/api/books/${'b'.repeat(64)}/cover`,
+				reads: ['library.json'],
+			},
+			{
+				name: 'uppercase',
+				book: marked,
+				size: 4,
+				path: `/api/books/${'A'.repeat(64)}/cover`,
+				reads: [],
+			},
+		]
+		for (const { name, book, size, path, reads } of scenarios) {
+			const fixture = bucketFor({
+				'library.json': manifest(book),
+				...(size === undefined
+					? {}
+					: { [`covers/${id}.webp`]: new Uint8Array(size) }),
+			})
+			const result = await handleLibrary(
+				await authorized(path),
+				envFor(fixture.bucket),
+			)
+			expect(result.status, name).toBe(404)
+			failureHeaders(result)
+			expect(fixture.gets, name).toEqual(reads)
+		}
+		const post = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`, 'POST'),
+			envFor(bucketFor().bucket),
+		)
+		expect(post.status).toBe(405)
+		expect(post.headers.get('Allow')).toBe('GET')
 	})
 
 	test('returns controlled errors for missing objects and R2 lookup failures', async () => {
@@ -362,9 +500,14 @@ describe('handleLibrary', () => {
 			await authorized('/api/books', 'POST'),
 			envFor(fixture.bucket),
 		)
+		const anonymousCover = await handleLibrary(
+			await requestFor(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
 		expect([outside.status, anonymous.status, method.status]).toEqual([
 			404, 401, 405,
 		])
+		expect(anonymousCover.status).toBe(401)
 		expect(method.headers.get('Allow')).toBe('GET')
 		expect(fixture.gets).toEqual([])
 	})
