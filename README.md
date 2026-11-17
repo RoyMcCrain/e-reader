@@ -25,7 +25,7 @@ bun run test:d1
 bun run build
 ```
 
-`tests/e2e` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。server の高速な Bun テストは認証ルールと書庫 API の契約を検証し、`bun run test` で実行します。`bun run test:r2` と `bun run test:d1` は Node.js 上の Miniflare を使うローカル R2/D1 の接続テストです。テストファイルは `.test.ts` 命名を使います。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
+`e2e/` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。server の高速な Bun テストは認証ルールと書庫 API の契約を検証し、`bun run test` で実行します。`bun run test:r2` と `bun run test:d1` は Node.js 上の Miniflare を使うローカル R2/D1 の接続テストです。テストファイルは `.test.ts` 命名を使います。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
 
 ブラウザーテストは Chromium を初回インストールしてから実行します。
 

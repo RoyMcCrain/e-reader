@@ -3,7 +3,7 @@ import { env } from 'node:process'
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
-	testDir: './tests/e2e',
+	testDir: './e2e',
 	testMatch: '**/*.e2e.ts',
 	testIgnore: '**/pwa.e2e.ts',
 	use: { baseURL: 'http://127.0.0.1:5173' },
