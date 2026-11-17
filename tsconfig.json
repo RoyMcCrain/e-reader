@@ -17,6 +17,7 @@
 		"src",
 		"tests",
 		"playwright.config.ts",
+		"playwright.pwa.config.ts",
 		"vite.config.ts",
 		"void.config.ts",
 		"db/schema.ts",

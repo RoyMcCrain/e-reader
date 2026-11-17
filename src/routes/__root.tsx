@@ -6,6 +6,7 @@ import {
 	useLocation,
 	useNavigate,
 } from '@tanstack/react-router'
+import { useEffect } from 'react'
 
 import {
 	ReaderProvider,
@@ -46,18 +47,18 @@ const AppShell = () => {
 	)
 }
 
-export const Route = createRootRoute({
-	head: () => ({
-		meta: [
-			{ charSet: 'utf-8' },
-			{
-				name: 'viewport',
-				content: 'width=device-width, initial-scale=1, viewport-fit=cover',
-			},
-			{ title: '栞 — ブラウザー読書室' },
-		],
-	}),
-	component: () => (
+const RootDocument = () => {
+	useEffect(() => {
+		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+			void navigator.serviceWorker
+				.register('/sw.js', { scope: '/', updateViaCache: 'none' })
+				.catch((error: unknown) =>
+					console.warn('Service Worker registration failed', error),
+				)
+		}
+	}, [])
+
+	return (
 		<html lang="ja">
 			<head>
 				<HeadContent />
@@ -69,5 +70,29 @@ export const Route = createRootRoute({
 				<Scripts />
 			</body>
 		</html>
-	),
+	)
+}
+
+export const Route = createRootRoute({
+	head: () => ({
+		meta: [
+			{ charSet: 'utf-8' },
+			{
+				name: 'viewport',
+				content: 'width=device-width, initial-scale=1, viewport-fit=cover',
+			},
+			{ title: '栞 — ブラウザー読書室' },
+			{ name: 'theme-color', content: '#586d57' },
+		],
+		links: [
+			{
+				rel: 'manifest',
+				href: '/manifest.webmanifest',
+				crossOrigin: 'use-credentials',
+			},
+			{ rel: 'icon', href: '/icon.svg', type: 'image/svg+xml' },
+			{ rel: 'apple-touch-icon', href: '/icons/apple-touch-icon.png' },
+		],
+	}),
+	component: RootDocument,
 })

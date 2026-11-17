@@ -36,6 +36,16 @@ bun run test:e2e
 
 本番ビルドのローカル確認は `bun run preview`（`http://localhost:4173`）です。
 
+## PWA
+
+対応ブラウザーでは、ブラウザーのインストール機能または「ホーム画面に追加」から利用できます（利用方法はブラウザーにより異なります）。本アプリはオンラインでの起動が必要です。Service Worker は登録されますが、オフライン起動や API・本のバイト列のキャッシュは行いません。本のデータは引き続き IndexedDB に保存されず、読書位置のみが保存されます。開発中は Service Worker を登録せず、更新を強制する仕組みもありません。Cloudflare Access の保護は変更しません。
+
+本番ビルド後に Chromium の PWA smoke test を実行します:
+
+```bash
+bun run build && bun run test:pwa
+```
+
 ## Mutation testing
 
 reader のユニットテストと、認証・書庫 API の server ユニットテストが、実際のコード変更を検出できるかを StrykerJS で確認します。対象は `src/lib/reader/layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts` と `src/server/access.ts`、`library.ts` です。
