@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 import { collapse } from 'foliate-js/epubcfi.js'
 
-import { turnPage } from './reader-actions'
+import { revealReader, turnPage } from './reader-actions'
 
 interface PositionView extends HTMLElement {
 	lastLocation?: { cfi?: string }
@@ -171,6 +171,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
 		}
 
 		await waitForLayout(18, 32.4)
+		await revealReader(page)
 		await page.getByRole('button', { name: '設定' }).click()
 		const beforeKeyboard = await view.evaluate(
 			(el) => (el as PositionView).lastLocation?.cfi,
@@ -196,6 +197,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
 		await expect
 			.poll(() => view.evaluate((el) => (el as PositionView).lastLocation?.cfi))
 			.not.toBe(beforeSecondVisit)
+		await revealReader(page)
 		await page.getByRole('button', { name: '設定' }).click()
 		saved = await capturePoint()
 		await apply('文字サイズの値', '20', 20, 42)

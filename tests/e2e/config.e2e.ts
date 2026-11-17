@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
-import { turnPage } from './reader-actions'
+import { revealReader, turnPage } from './reader-actions'
 
 const persistedNumber = (
 	page: import('@playwright/test').Page,
@@ -47,6 +47,7 @@ test('config overlays a live book and disables its keyboard input', async ({
 	await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
 	await turnPage(page, true)
 	await expect(page.getByRole('img', { name: '画像 2 / 3' })).toBeVisible()
+	await revealReader(page)
 	await page.getByRole('button', { name: '設定' }).click()
 	await expect(page.getByRole('heading', { name: '設定' })).toBeVisible()
 	const readerShell = page.locator('[aria-hidden="true"]').filter({

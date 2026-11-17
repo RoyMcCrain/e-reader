@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
-import { turnPage } from './reader-actions'
+import { revealReader, turnPage } from './reader-actions'
 
 test('ZIP progress follows visible pages, remaining pages, and completion', async ({
 	page,
@@ -53,6 +53,7 @@ test('ZIP progress follows visible pages, remaining pages, and completion', asyn
 		'aria-valuetext',
 		'4–5/6、83%、あと1ページ',
 	)
+	await revealReader(page)
 	await page.getByRole('button', { name: '本を閉じる' }).click()
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'synthetic.zip',
