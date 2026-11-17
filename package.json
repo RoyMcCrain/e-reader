@@ -16,6 +16,7 @@
 		"test:d1": "./node_modules/.bin/node --test src/server/reading-positions-d1.test.ts",
 		"test:e2e": "bunx --bun --no-install playwright test",
 		"test:mutation": "./node_modules/.bin/node ./node_modules/@stryker-mutator/core/bin/stryker.js run",
+		"test:pwa": "bunx --bun --no-install playwright test --config playwright.pwa.config.ts",
 		"test:r2": "./node_modules/.bin/node --test src/server/library-r2.test.ts",
 		"typecheck": "bunx --bun --no-install tsc --noEmit"
 	},
