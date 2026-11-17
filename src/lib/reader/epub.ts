@@ -549,7 +549,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 			options.host,
 			book?.dir === 'rtl' ? 'rtl' : 'ltr',
 			(next) => {
-				if (active) void (next ? session.next() : session.prev())
+				if (!active) return
+				return next ? session.next() : session.prev()
 			},
 		)
 	}
@@ -683,7 +684,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 				options.host,
 				book?.dir === 'rtl' ? 'rtl' : 'ltr',
 				(next) => {
-					if (active) void (next ? session.next() : session.prev())
+					if (!active) return
+					return next ? session.next() : session.prev()
 				},
 			)
 			panes.forEach(bindPane)
@@ -764,7 +766,8 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 				options.host,
 				book.dir === 'rtl' ? 'rtl' : 'ltr',
 				(next) => {
-					if (active) void (next ? session.next() : session.prev())
+					if (!active) return
+					return next ? session.next() : session.prev()
 				},
 			)
 		session.dir = book.dir === 'rtl' ? 'rtl' : 'ltr'
