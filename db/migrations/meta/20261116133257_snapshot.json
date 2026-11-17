@@ -1,0 +1,68 @@
+{
+	"version": "6",
+	"dialect": "sqlite",
+	"id": "597536e1-6256-4196-b5d4-e042482db7ba",
+	"prevId": "00000000-0000-0000-0000-000000000000",
+	"tables": {
+		"reading_positions": {
+			"name": "reading_positions",
+			"columns": {
+				"user_id": {
+					"name": "user_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"book_id": {
+					"name": "book_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"cfi": {
+					"name": "cfi",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"revision": {
+					"name": "revision",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"mutation_id": {
+					"name": "mutation_id",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"reading_positions_user_id_book_id_pk": {
+					"columns": ["user_id", "book_id"],
+					"name": "reading_positions_user_id_book_id_pk"
+				}
+			},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		}
+	},
+	"views": {},
+	"enums": {},
+	"_meta": {
+		"schemas": {},
+		"tables": {},
+		"columns": {}
+	},
+	"internal": {
+		"indexes": {}
+	}
+}

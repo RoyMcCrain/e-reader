@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConfigRouteImport } from './routes/config'
 import { Route as ApiBooksRouteImport } from './routes/api.books'
 import { Route as ApiBooksIdRouteImport } from './routes/api.books.$id'
+import { Route as ApiReadingPositionsIdRouteImport } from './routes/api.reading-positions.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const ApiBooksIdRoute = ApiBooksIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiBooksRoute,
 } as any)
+const ApiReadingPositionsIdRoute = ApiReadingPositionsIdRouteImport.update({
+  id: '/api/reading-positions/$id',
+  path: '/api/reading-positions/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/books/$id': typeof ApiBooksIdRoute
+  '/api/reading-positions/$id': typeof ApiReadingPositionsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/books/$id': typeof ApiBooksIdRoute
+  '/api/reading-positions/$id': typeof ApiReadingPositionsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,19 +61,37 @@ export interface FileRoutesById {
   '/config': typeof ConfigRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/books/$id': typeof ApiBooksIdRoute
+  '/api/reading-positions/$id': typeof ApiReadingPositionsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/config' | '/api/books' | '/api/books/$id'
+  fullPaths:
+    | '/'
+    | '/config'
+    | '/api/books'
+    | '/api/books/$id'
+    | '/api/reading-positions/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/config' | '/api/books' | '/api/books/$id'
-  id: '__root__' | '/' | '/config' | '/api/books' | '/api/books/$id'
+  to:
+    | '/'
+    | '/config'
+    | '/api/books'
+    | '/api/books/$id'
+    | '/api/reading-positions/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/config'
+    | '/api/books'
+    | '/api/books/$id'
+    | '/api/reading-positions/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConfigRoute: typeof ConfigRoute
   ApiBooksRoute: typeof ApiBooksRouteWithChildren
+  ApiReadingPositionsIdRoute: typeof ApiReadingPositionsIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -98,6 +124,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBooksIdRouteImport
       parentRoute: typeof ApiBooksRoute
     }
+    '/api/reading-positions/$id': {
+      id: '/api/reading-positions/$id'
+      path: '/api/reading-positions/$id'
+      fullPath: '/api/reading-positions/$id'
+      preLoaderRoute: typeof ApiReadingPositionsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -117,6 +150,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConfigRoute: ConfigRoute,
   ApiBooksRoute: ApiBooksRouteWithChildren,
+  ApiReadingPositionsIdRoute: ApiReadingPositionsIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

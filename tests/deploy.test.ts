@@ -8,16 +8,26 @@ import { test } from 'node:test'
 const workflow = Bun.YAML.parse(
 	await readFile('.github/workflows/ci-cd.yml', 'utf8'),
 ) as {
-	jobs: { deploy: { steps: { env?: Record<string, string>; run?: string }[] } }
+	env?: Record<string, string>
+	jobs: {
+		deploy: {
+			steps: { env?: Record<string, string>; name?: string; run?: string }[]
+		}
+		validate: {
+			env?: Record<string, string>
+			steps: { env?: Record<string, string>; name?: string; run?: string }[]
+		}
+	}
 }
 const runScript = workflow.jobs.deploy.steps.find(
 	({ env }) => env?.CF_ACCESS_READINESS_ORIGIN,
 )?.run
 assert.ok(runScript)
 
-const runDeploy = async (
+const runScriptWithStub = async (
+	script: string,
 	credentials: Record<string, string | undefined>,
-	deployStatus = 0,
+	commandStatus = 0,
 ) => {
 	const directory = await mkdtemp(join(tmpdir(), 'e-reader-deploy-'))
 	const bin = join(directory, 'bin')
@@ -25,7 +35,7 @@ const runDeploy = async (
 	await mkdir(bin)
 	await writeFile(
 		join(bin, 'bunx'),
-		`#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "$DEPLOY_CALLS"\nexit "${deployStatus}"\n`,
+		`#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "$DEPLOY_CALLS"\nexit "${commandStatus}"\n`,
 		{ mode: 0o755 },
 	)
 	await writeFile(
@@ -34,7 +44,7 @@ const runDeploy = async (
 		{ mode: 0o755 },
 	)
 	try {
-		const result = spawnSync('bash', ['-c', runScript], {
+		const result = spawnSync('bash', ['-c', script], {
 			cwd: directory,
 			encoding: 'utf8',
 			env: {
@@ -49,8 +59,32 @@ const runDeploy = async (
 	}
 }
 
+void test('validates committed migrations locally without cloud credentials', async () => {
+	const migrationStep = workflow.jobs.validate.steps.find(
+		({ name }) => name === 'Validate local database migrations',
+	)
+	assert.ok(migrationStep?.run, 'Missing required migration step')
+	for (const name of [
+		'CLOUDFLARE_API_TOKEN',
+		'CF_ACCESS_CLIENT_ID',
+		'CF_ACCESS_CLIENT_SECRET',
+	]) {
+		assert.equal(workflow.env?.[name], undefined, name)
+		assert.equal(workflow.jobs.validate.env?.[name], undefined, name)
+		assert.equal(migrationStep.env?.[name], undefined, name)
+	}
+
+	const result = await runScriptWithStub(migrationStep.run, {})
+	assert.equal(result.status, 0, result.stderr)
+	assert.equal(result.calls, '--no-install void db migrate\n')
+
+	const failed = await runScriptWithStub(migrationStep.run, {}, 23)
+	assert.equal(failed.status, 23)
+	assert.equal(failed.calls, '--no-install void db migrate\n')
+})
+
 void test('deploys using service credentials without a human token', async () => {
-	const result = await runDeploy({
+	const result = await runScriptWithStub(runScript, {
 		CLOUDFLARE_API_TOKEN: 'management-token',
 		CF_ACCESS_CLIENT_ID: 'service-id',
 		CF_ACCESS_CLIENT_SECRET: 'service-secret',
@@ -74,7 +108,7 @@ void test('missing required credentials fail before deployment, even with old to
 			CF_ACCESS_READINESS_ORIGIN: 'https://reader.rrrr.dev',
 		}
 		delete credentials[missing as keyof typeof credentials]
-		const result = await runDeploy(credentials)
+		const result = await runScriptWithStub(runScript, credentials)
 		assert.notEqual(result.status, 0, missing)
 		assert.equal(result.calls, '', missing)
 		assert.match(result.stderr, new RegExp(missing), missing)
@@ -82,7 +116,8 @@ void test('missing required credentials fail before deployment, even with old to
 })
 
 void test('propagates deployment failure', async () => {
-	const result = await runDeploy(
+	const result = await runScriptWithStub(
+		runScript,
 		{
 			CLOUDFLARE_API_TOKEN: 'management-token',
 			CF_ACCESS_CLIENT_ID: 'service-id',

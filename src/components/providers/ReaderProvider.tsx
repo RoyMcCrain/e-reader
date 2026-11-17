@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { flushPendingPositions } from '#lib/reader/positions'
 import {
 	DEFAULT_SETTINGS,
 	normalizeSettings,
@@ -38,6 +39,20 @@ export const ReaderProvider = ({ children }: ReaderProviderProps) => {
 	useEffect(() => {
 		if (hydrated) writeSettings(settings)
 	}, [hydrated, settings])
+
+	useEffect(() => {
+		const retry = () => {
+			if (document.visibilityState === 'hidden') return
+			void flushPendingPositions().catch(() => {})
+		}
+		retry()
+		window.addEventListener('online', retry)
+		document.addEventListener('visibilitychange', retry)
+		return () => {
+			window.removeEventListener('online', retry)
+			document.removeEventListener('visibilitychange', retry)
+		}
+	}, [])
 
 	const value = useMemo<ReaderApp>(
 		() => ({
