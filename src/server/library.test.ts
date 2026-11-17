@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { handleLibrary, type LibraryEnv } from '#server/library.ts'
 import {
 	accessEnv,
+	fixedNow,
 	requestFor,
 	resetJwks,
 	setupJwks,
 	tokenFor,
-} from '#server/test-helpers.ts'
+} from '#server/access-fixture.ts'
+import { handleLibrary, type LibraryEnv } from '#server/library.ts'
 
 const id = 'a'.repeat(64)
 // Manifest metadata deliberately differs from the 3-byte download bodies.
@@ -37,9 +38,13 @@ const bucketFor = (objects: Record<string, string | Uint8Array> = {}) => {
 	return { bucket, gets }
 }
 
-const envFor = (bucket: LibraryEnv['BOOKS']): LibraryEnv => ({
+const envFor = (
+	bucket: LibraryEnv['BOOKS'],
+	overrides: Partial<LibraryEnv> = {},
+): LibraryEnv => ({
 	...accessEnv(),
 	BOOKS: bucket,
+	...overrides,
 })
 
 const authorized = async (path: string, method = 'GET') =>
@@ -245,6 +250,102 @@ describe('handleLibrary', () => {
 			envFor(bucketFor({ 'library.json': `${exactLimit} ` }).bucket),
 		)
 		expect(overLimit.status).toBe(503)
+	})
+
+	test('rejects invalid JWTs at the API boundary before storage access', async () => {
+		const fixture = bucketFor()
+		const valid = await tokenFor()
+		const [header, payload, signature] = valid.split('.')
+		const tampered = `${header}.${payload}.${signature[0] === 'a' ? 'b' : 'a'}${signature.slice(1)}`
+		const invalidTokens = [
+			['tampered signature', tampered],
+			['expired', await tokenFor({ exp: fixedNow / 1000 })],
+			['wrong audience', await tokenFor({ aud: 'foreign-audience' })],
+			[
+				'wrong issuer',
+				await tokenFor({ iss: 'https://foreign.cloudflareaccess.com' }),
+			],
+		] as const
+
+		for (const [category, token] of invalidTokens) {
+			const result = await handleLibrary(
+				await requestFor('/api/books', token),
+				envFor(fixture.bucket),
+			)
+			expect(result.status, category).toBe(401)
+		}
+		expect(fixture.gets).toEqual([])
+	})
+
+	test('denies spoofed identity, other owners, and service tokens before storage access', async () => {
+		const fixture = bucketFor()
+		const spoofed = await handleLibrary(
+			new Request('https://reader.example/api/books', {
+				headers: { 'Cf-Access-Email': 'owner@example.com' },
+			}),
+			envFor(fixture.bucket),
+		)
+		const otherOwner = await handleLibrary(
+			await requestFor(
+				'/api/books',
+				await tokenFor({ email: 'other@example.com' }),
+			),
+			envFor(fixture.bucket),
+		)
+		const serviceToken = await tokenFor({ email: undefined })
+		const serviceStatuses = await Promise.all([
+			handleLibrary(
+				await requestFor('/api/books', serviceToken),
+				envFor(fixture.bucket),
+			),
+			handleLibrary(
+				await requestFor(`/api/books/${id}`, serviceToken),
+				envFor(fixture.bucket),
+			),
+		])
+		expect([spoofed.status, otherOwner.status]).toEqual([401, 403])
+		expect(serviceStatuses.map(({ status }) => status)).toEqual([403, 403])
+		expect(fixture.gets).toEqual([])
+	})
+
+	test('fails closed for absent API configuration before storage access', async () => {
+		const fixture = bucketFor()
+		const token = await tokenFor()
+		const responses = await Promise.all([
+			handleLibrary(
+				await requestFor('/api/books', token),
+				envFor(fixture.bucket, { ACCESS_AUD: undefined }),
+			),
+			handleLibrary(
+				await requestFor('/api/books', token),
+				envFor(fixture.bucket, { ACCESS_ALLOWED_EMAIL: undefined }),
+			),
+			handleLibrary(
+				await requestFor(`/api/books/${id}`, token),
+				envFor(fixture.bucket, { ACCESS_ALLOWED_EMAIL: '' }),
+			),
+		])
+		expect(responses.map(({ status }) => status)).toEqual([503, 503, 503])
+		expect(fixture.gets).toEqual([])
+	})
+
+	test('returns a private controlled error when listed body lookup rejects', async () => {
+		const detail = 'private body lookup detail'
+		const bucket = {
+			get: async (key: string) => {
+				if (key === `books/${id}.zip`) throw new Error(detail)
+				return bucketFor({
+					'library.json': JSON.stringify({ books: [record] }),
+				}).bucket.get(key)
+			},
+		}
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}`),
+			envFor(bucket),
+		)
+		expect(result.status).toBe(503)
+		expect(await result.text()).not.toContain(detail)
+		failureHeaders(result)
 	})
 
 	test('checks the route and authorization before touching storage; advertises GET only', async () => {

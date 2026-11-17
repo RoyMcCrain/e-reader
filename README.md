@@ -20,11 +20,12 @@ bun run typecheck
 bun run lint
 bun run format:check
 bun test
-bun run test:server
+bun run test:r2
+bun run test:d1
 bun run build
 ```
 
-読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
+`tests/e2e` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。server の高速な Bun テストは認証ルールと書庫 API の契約を検証し、`bun run test` で実行します。`bun run test:r2` と `bun run test:d1` は Node.js 上の Miniflare を使うローカル R2/D1 の接続テストです。テストファイルは `.test.ts` 命名を使います。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
 
 ブラウザーテストは Chromium を初回インストールしてから実行します。
 
@@ -47,7 +48,7 @@ bun run test:mutation --mutate src/lib/reader/layout.ts
 bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
 ```
 
-各 mutant ごとに command runner が Bun で reader と server のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。server のユニットテストは高速な Bun テストで、Node.js/Miniflare を使う既存の `tests/server/*.integration.ts` 統合テスト（`bun run test:server`）とは別に保持しています。Mutation testing は統合テストや E2E を実行せず、通常の test や CI に自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
+各 mutant ごとに command runner が Bun で reader と server のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。認証・書庫 API の契約テストは Bun、ローカル R2/D1 を使うストレージ接続テストはそれぞれ `bun run test:r2` と `bun run test:d1` で別々に実行します。Mutation testing は R2/D1 接続テストや E2E を実行せず、通常の test や CI に自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
 
 `Survived` は、挙動を検証するテストが不足していないか、または等価 mutant ではないかを調査する手掛かりです。Mutation score だけでテスト品質は保証されず、100% を必須にはしません。
 

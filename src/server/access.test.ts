@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { checkAccess } from '#server/access.ts'
 import {
 	accessEnv,
 	fixedNow,
@@ -8,7 +7,8 @@ import {
 	resetJwks,
 	setupJwks,
 	tokenFor,
-} from '#server/test-helpers.ts'
+} from '#server/access-fixture.ts'
+import { checkAccess } from '#server/access.ts'
 
 describe('checkAccess', () => {
 	beforeEach(setupJwks)

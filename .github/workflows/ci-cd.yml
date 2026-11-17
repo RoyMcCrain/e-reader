@@ -64,8 +64,12 @@ jobs:
         run: bun test
         shell: bash
 
-      - name: Server integration tests
-        run: bun run test:server
+      - name: R2 storage test
+        run: bun run test:r2
+        shell: bash
+
+      - name: D1 storage tests
+        run: bun run test:d1
         shell: bash
 
       - name: Install Playwright Chromium
@@ -121,22 +125,5 @@ jobs:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           CF_ACCESS_READINESS_ORIGIN: https://reader.rrrr.dev
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-            echo "CLOUDFLARE_API_TOKEN is required in the production Environment." >&2
-            exit 1
-          fi
-          if [[ -z "${CF_ACCESS_CLIENT_ID:-}" ]]; then
-            echo "CF_ACCESS_CLIENT_ID is required in the production Environment." >&2
-            exit 1
-          fi
-          if [[ -z "${CF_ACCESS_CLIENT_SECRET:-}" ]]; then
-            echo "CF_ACCESS_CLIENT_SECRET is required in the production Environment." >&2
-            exit 1
-          fi
-
-          # Void applies pending D1 migrations before publishing the Worker.
-          bunx --no-install void deploy --platform cloudflare
+        run: bash src/deploy/deploy.sh
         shell: bash
