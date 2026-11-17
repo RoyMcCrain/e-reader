@@ -6,14 +6,17 @@ export const READER_ACTIVITY_EVENT = 'reader-activity'
 export const READER_TURN_EVENT = 'reader-turn'
 
 type Direction = 'rtl' | 'ltr'
-type Turn = (next: boolean, swipeDirection?: 'left' | 'right') => void
+type Turn = (
+	next: boolean,
+	swipeDirection?: 'left' | 'right',
+) => void | Promise<void>
 type Point = { x: number; y: number }
 
 const notifyTurn =
 	(host: HTMLElement, turn: Turn): Turn =>
 	(next, swipeDirection) => {
 		host.dispatchEvent(new Event(READER_TURN_EVENT, { bubbles: true }))
-		turn(next, swipeDirection)
+		return turn(next, swipeDirection)
 	}
 
 const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
@@ -76,7 +79,7 @@ const bindSwipe = (target: EventTarget, direction: Direction, turn: Turn) => {
 			suppressClick = false
 			suppressionTimer = undefined
 		}, 500)
-		turn(direction === 'rtl' ? dx > 0 : dx < 0, dx < 0 ? 'left' : 'right')
+		void turn(direction === 'rtl' ? dx > 0 : dx < 0, dx < 0 ? 'left' : 'right')
 	}
 	const onCancel = (event: Event) => {
 		if (!start) return
@@ -162,7 +165,7 @@ const bindKeys = (doc: Document, direction: Direction, turn: Turn) => {
 			event.key === (direction === 'rtl' ? 'ArrowRight' : 'ArrowLeft')
 		if (!next && !prev) return
 		event.preventDefault()
-		turn(next)
+		void turn(next)
 	}
 	doc.addEventListener('keydown', key)
 	return () => doc.removeEventListener('keydown', key)
@@ -195,10 +198,10 @@ const bindEpubClick = (
 		const rect = host.getBoundingClientRect()
 		if (x < rect.left + rect.width * 0.22) {
 			event.preventDefault()
-			turn(direction === 'rtl')
+			void turn(direction === 'rtl')
 		} else if (x > rect.right - rect.width * 0.22) {
 			event.preventDefault()
-			turn(direction !== 'rtl')
+			void turn(direction !== 'rtl')
 		}
 	}
 	doc.addEventListener('click', click)
@@ -220,10 +223,10 @@ export const bindHostInput = (
 		const rect = host.getBoundingClientRect()
 		if (event.clientX < rect.left + rect.width * 0.22) {
 			event.preventDefault()
-			notify(direction === 'rtl')
+			void notify(direction === 'rtl')
 		} else if (event.clientX > rect.right - rect.width * 0.22) {
 			event.preventDefault()
-			notify(direction !== 'rtl')
+			void notify(direction !== 'rtl')
 		}
 	}
 	host.addEventListener('click', click)

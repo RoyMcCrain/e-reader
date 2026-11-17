@@ -3,18 +3,26 @@ import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 
 import { turnPage } from './reader-actions'
 
-const makeFixedEpub = async () => {
+const makeFixedEpub = async (
+	imageStyle = 'width:100%;height:100%;object-fit:contain',
+) => {
 	const writer = new ZipWriter(new BlobWriter())
 	const pages = ['P1', 'P2', 'P3']
 	const files: Record<string, string> = {
 		mimetype: 'application/epub+zip',
 		'META-INF/container.xml':
 			'<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
-		'book.opf': `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="fixed">fixed</dc:identifier><dc:title>Fixed</dc:title><dc:language>ja</dc:language><meta property="rendition:layout">pre-paginated</meta></metadata><manifest>${pages.map((page, index) => `<item id="p${index}" href="${page}.xhtml" media-type="application/xhtml+xml"/>`).join('')}</manifest><spine>${pages.map((page, index) => `<itemref idref="p${index}"/>`).join('')}</spine></package>`,
+		'book.opf': `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="fixed">fixed</dc:identifier><dc:title>Fixed</dc:title><dc:language>ja</dc:language><meta property="rendition:layout">pre-paginated</meta></metadata><manifest>${pages.map((page, index) => `<item id="p${index}" href="${page}.xhtml" media-type="application/xhtml+xml"/><item id="i${index}" href="${page}.svg" media-type="image/svg+xml"/>`).join('')}</manifest><spine>${pages.map((page, index) => `<itemref idref="p${index}"/>`).join('')}</spine></package>`,
 		...Object.fromEntries(
 			pages.map((page) => [
 				`${page}.xhtml`,
-				`<html xmlns="http://www.w3.org/1999/xhtml"><head><meta name="viewport" content="width=600,height=800"/></head><body>${page}</body></html>`,
+				`<html xmlns="http://www.w3.org/1999/xhtml"><head><meta name="viewport" content="width=600,height=800"/></head><body style="margin:0"><img src="${page}.svg" alt="${page}" style="${imageStyle}"/></body></html>`,
+			]),
+		),
+		...Object.fromEntries(
+			pages.map((page, index) => [
+				`${page}.svg`,
+				`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="${['#e02020', '#2040e0', '#20a040'][index]}"/><path d="M0 0h300v800H0z" fill="${['#f0a020', '#20d0e0', '#d020c0'][index]}"/><circle cx="450" cy="200" r="100" fill="white"/></svg>`,
 			]),
 		),
 	}
@@ -22,6 +30,528 @@ const makeFixedEpub = async () => {
 		await writer.add(name, new TextReader(content))
 	return new Uint8Array(await (await writer.close()).arrayBuffer())
 }
+
+const openFixedEpub = async (
+	page: import('@playwright/test').Page,
+	imageStyle = 'width:100%;height:100%;object-fit:contain',
+) => {
+	await page.setViewportSize({ width: 800, height: 900 })
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'shiori.reader.settings.v1',
+			JSON.stringify({ spread: 'single', firstPageSingle: false }),
+		),
+	)
+	await page.goto('/')
+	await page.waitForLoadState('networkidle')
+	await page.locator('input[type=file]').setInputFiles({
+		name: 'fixed.epub',
+		mimeType: 'application/epub+zip',
+		buffer: Buffer.from(await makeFixedEpub(imageStyle)),
+	})
+	const view = page.locator('[data-reader-page="primary"] foliate-view')
+	await expect
+		.poll(() =>
+			view.evaluate((element) =>
+				Boolean((element as HTMLElement & { renderer?: unknown }).renderer),
+			),
+		)
+		.toBe(true)
+	await expect(
+		page.getByText('本を開いています…', { exact: true }),
+	).toBeHidden()
+	return view
+}
+
+test('fixed-layout EPUB keeps a visible outgoing image while navigation is delayed', async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 800, height: 900 })
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'shiori.reader.settings.v1',
+			JSON.stringify({ spread: 'single', firstPageSingle: false }),
+		),
+	)
+	await page.goto('/')
+	await page.waitForLoadState('networkidle')
+	await page.locator('input[type=file]').setInputFiles({
+		name: 'fixed.epub',
+		mimeType: 'application/epub+zip',
+		buffer: Buffer.from(await makeFixedEpub()),
+	})
+	const view = page.locator('[data-reader-page="primary"] foliate-view')
+	await expect
+		.poll(() =>
+			view.evaluate((element) =>
+				Boolean((element as HTMLElement & { renderer?: unknown }).renderer),
+			),
+		)
+		.toBe(true)
+	await expect(
+		page.getByText('本を開いています…', { exact: true }),
+	).toBeHidden()
+	await view.evaluate((element) => {
+		const renderer = (
+			element as HTMLElement & {
+				renderer: { goTo: (...args: unknown[]) => Promise<void> }
+			}
+		).renderer
+		const goTo = renderer.goTo.bind(renderer)
+		let releaseBefore!: () => void
+		let releaseAfter!: () => void
+		const before = new Promise<void>((resolve) => (releaseBefore = resolve))
+		const after = new Promise<void>((resolve) => (releaseAfter = resolve))
+		const state = window as Window & {
+			releaseBefore?: () => void
+			releaseAfter?: () => void
+			turnStarted?: boolean
+			relocateReached?: boolean
+		}
+		state.releaseBefore = releaseBefore
+		state.releaseAfter = releaseAfter
+		renderer.goTo = async (...args) => {
+			const target = args[0] as { index?: number } | undefined
+			if (target?.index !== 1) return goTo(...args)
+			state.turnStarted = true
+			await before
+			await goTo(...args)
+			state.relocateReached = true
+			await after
+		}
+	})
+	const cdp = await page.context().newCDPSession(page)
+	const box = await page.locator('[data-reader-spread]').boundingBox()
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: [
+			{ x: box!.x + box!.width * 0.8, y: box!.y + box!.height / 2 },
+		],
+	})
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchMove',
+		touchPoints: [
+			{ x: box!.x + box!.width * 0.2, y: box!.y + box!.height / 2 },
+		],
+	})
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchEnd',
+		touchPoints: [],
+	})
+	await page.waitForFunction(() =>
+		Boolean((window as Window & { turnStarted?: boolean }).turnStarted),
+	)
+	const paintedPixel = async () => {
+		const box = await page.locator('[data-reader-spread]').boundingBox()
+		const screenshot = await page.screenshot({
+			clip: { x: box!.x, y: box!.y, width: box!.width, height: box!.height },
+		})
+		return page.evaluate(
+			async (data) => {
+				const image = new Image()
+				image.src = data
+				await image.decode()
+				const canvas = document.createElement('canvas')
+				canvas.width = image.width
+				canvas.height = image.height
+				const context = canvas.getContext('2d')!
+				context.drawImage(image, 0, 0)
+				return [
+					...context.getImageData(
+						Math.floor(image.width * 0.35),
+						Math.floor(image.height * 0.5),
+						1,
+						1,
+					).data,
+				]
+			},
+			`data:image/png;base64,${screenshot.toString('base64')}`,
+		)
+	}
+	const visibleImagePixels = () =>
+		view.evaluate((element) => {
+			const renderer = element as HTMLElement & {
+				renderer?: { getContents(): { doc: Document }[] }
+			}
+			const image = renderer.renderer
+				?.getContents()[0]
+				?.doc.querySelector('img')
+			if (!image) return 0
+			const frame = image.ownerDocument.defaultView?.frameElement
+			if (!frame) return 0
+			const rect = image.getBoundingClientRect()
+			const frameRect = frame.getBoundingClientRect()
+			const viewport = element.ownerDocument.defaultView!.innerWidth
+			const left = frameRect.left + rect.left
+			return Math.max(
+				0,
+				Math.min(viewport, left + rect.width) - Math.max(0, left),
+			)
+		})
+	await expect.poll(visibleImagePixels).toBeGreaterThan(100)
+	const beforeNavigation = await paintedPixel()
+	expect(beforeNavigation[0]).toBeGreaterThan(150)
+	expect(beforeNavigation[2]).toBeLessThan(80)
+	await page.evaluate(() =>
+		(window as Window & { releaseBefore?: () => void }).releaseBefore?.(),
+	)
+	await page.waitForFunction(() =>
+		Boolean((window as Window & { relocateReached?: boolean }).relocateReached),
+	)
+	expect(await paintedPixel()).toEqual(beforeNavigation)
+	await page.evaluate(() =>
+		(window as Window & { releaseAfter?: () => void }).releaseAfter?.(),
+	)
+	await expect
+		.poll(() =>
+			view.evaluate(
+				(element) =>
+					(
+						element as HTMLElement & {
+							renderer?: { getContents(): { doc: Document }[] }
+						}
+					).renderer
+						?.getContents()[0]
+						?.doc.querySelector('img')?.alt ?? '',
+			),
+		)
+		.toContain('P2')
+	await expect(page.locator('[data-reader-spread]')).toHaveCSS(
+		'transform',
+		'none',
+	)
+	await expect(page.locator('[data-reader-spread] canvas')).toHaveCount(0)
+	const incomingPixels = await paintedPixel()
+	expect(incomingPixels[2]).toBeGreaterThan(150)
+	expect(incomingPixels[0]).toBeLessThan(80)
+	await cdp.detach()
+})
+
+test('ignored iframe controls cancel stale gestures and remain interactive during turns', async ({
+	page,
+}) => {
+	const view = await openFixedEpub(page)
+	await view.evaluate((element) => {
+		const renderer = (
+			element as HTMLElement & {
+				renderer: { goTo: (...args: unknown[]) => Promise<void> }
+			}
+		).renderer
+		const goTo = renderer.goTo.bind(renderer)
+		;(window as Window & { firstTurnTarget?: number }).firstTurnTarget = -1
+		renderer.goTo = async (...args) => {
+			const target = args[0] as { index?: number } | undefined
+			;(window as Window & { firstTurnTarget?: number }).firstTurnTarget =
+				target?.index ?? -2
+			return goTo(...args)
+		}
+	})
+	const docHandle = await view.evaluateHandle(
+		(element) =>
+			(
+				element as HTMLElement & {
+					renderer: { getContents(): { doc: Document }[] }
+				}
+			).renderer.getContents()[0].doc,
+	)
+	await docHandle.evaluate((doc) => {
+		const control = doc.createElement('button')
+		control.textContent = 'Control'
+		doc.body.append(control)
+		let received = false
+		control.addEventListener('touchstart', (event) => {
+			received = !event.defaultPrevented
+		})
+		;(
+			doc.defaultView as Window & { controlReceived?: () => boolean }
+		).controlReceived = () => received
+	})
+	const dispatched = await view.evaluate((element) => {
+		const doc = (
+			element as HTMLElement & {
+				renderer: { getContents(): { doc: Document }[] }
+			}
+		).renderer.getContents()[0].doc
+		const button = doc.querySelector('button')!
+		const image = doc.querySelector('img')!
+		const makeTouch = (target: Element, identifier: number, screenX: number) =>
+			new Touch({
+				identifier,
+				target,
+				screenX,
+				screenY: 300,
+				clientX: screenX,
+				clientY: 300,
+			})
+		const send = (
+			target: Element,
+			type: string,
+			touches: Touch[],
+			changedTouches: Touch[],
+		) => {
+			const event = new TouchEvent(type, {
+				bubbles: true,
+				cancelable: true,
+				touches,
+				changedTouches,
+			})
+			target.dispatchEvent(event)
+			return event
+		}
+		const first = makeTouch(image, 1, 500)
+		send(image, 'touchstart', [first], [first])
+		const moved = makeTouch(image, 1, 430)
+		send(image, 'touchmove', [moved], [moved])
+		const surface = doc.defaultView!.parent.document.querySelector(
+			'[data-reader-spread]',
+		)!
+		const dragged = getComputedStyle(surface).transform
+		const second = makeTouch(button, 2, 400)
+		const controlEvent = send(button, 'touchstart', [moved, second], [second])
+		send(button, 'touchend', [], [moved])
+		const settled = getComputedStyle(surface).transform
+		return {
+			controlDelivered: !controlEvent.defaultPrevented,
+			dragged,
+			settled,
+		}
+	})
+	expect(dispatched.controlDelivered).toBe(true)
+	expect(dispatched.dragged).not.toBe('none')
+	expect(dispatched.settled).toBe('none')
+	await expect
+		.poll(() =>
+			view.evaluate(
+				() => (window as Window & { firstTurnTarget?: number }).firstTurnTarget,
+			),
+		)
+		.toBe(-1)
+	await expect
+		.poll(() =>
+			view.evaluate(
+				(element) =>
+					(
+						element as HTMLElement & {
+							renderer: { getContents(): { doc: Document }[] }
+						}
+					).renderer
+						.getContents()[0]
+						.doc.querySelector('img')?.alt,
+			),
+		)
+		.toBe('P1')
+	const controlReceived = await view.evaluate((element) => {
+		const win = (
+			element as HTMLElement & {
+				renderer: { getContents(): { doc: Document }[] }
+			}
+		).renderer.getContents()[0].doc.defaultView as Window & {
+			controlReceived?: () => boolean
+		}
+		return win.controlReceived?.() ?? false
+	})
+	expect(controlReceived).toBe(true)
+	await view.evaluate((element) => {
+		const renderer = (
+			element as HTMLElement & {
+				renderer: { goTo: (...args: unknown[]) => Promise<void> }
+			}
+		).renderer
+		const goTo = renderer.goTo.bind(renderer)
+		let release!: () => void
+		const gate = new Promise<void>((resolve) => (release = resolve))
+		;(
+			window as Window & { releaseTurn?: () => void; turnStarted?: boolean }
+		).releaseTurn = release
+		renderer.goTo = async (...args) => {
+			if ((args[0] as { index?: number } | undefined)?.index !== 1)
+				return goTo(...args)
+			;(window as Window & { turnStarted?: boolean }).turnStarted = true
+			await gate
+			await goTo(...args)
+		}
+	})
+	const box = await page.locator('[data-reader-spread]').boundingBox()
+	const cdp = await page.context().newCDPSession(page)
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: [
+			{ x: box!.x + box!.width * 0.8, y: box!.y + box!.height / 2 },
+		],
+	})
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchMove',
+		touchPoints: [
+			{ x: box!.x + box!.width * 0.2, y: box!.y + box!.height / 2 },
+		],
+	})
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchEnd',
+		touchPoints: [],
+	})
+	await page.waitForFunction(() =>
+		Boolean((window as Window & { turnStarted?: boolean }).turnStarted),
+	)
+	const surface = page.locator('[data-reader-spread]')
+	const heldTransform = await surface.evaluate(
+		(element) => getComputedStyle(element).transform,
+	)
+	const heldSnapshots = await surface.locator('canvas').count()
+	const controlStatus = await view.evaluate((element) => {
+		const doc = (
+			element as HTMLElement & {
+				renderer: { getContents(): { doc: Document }[] }
+			}
+		).renderer.getContents()[0].doc
+		const button = doc.querySelector('button')!
+		let delivered = false
+		button.addEventListener(
+			'touchstart',
+			(event) => {
+				delivered = !event.defaultPrevented
+			},
+			{ once: true },
+		)
+		const touch = new Touch({
+			identifier: 3,
+			target: button,
+			screenX: 300,
+			screenY: 300,
+			clientX: 300,
+			clientY: 300,
+		})
+		button.dispatchEvent(
+			new TouchEvent('touchstart', {
+				bubbles: true,
+				cancelable: true,
+				touches: [touch],
+				changedTouches: [touch],
+			}),
+		)
+		return delivered
+	})
+	expect(controlStatus).toBe(true)
+	await expect(surface).toHaveCSS('transform', heldTransform)
+	await expect(surface.locator('canvas')).toHaveCount(heldSnapshots)
+	await page.evaluate(() =>
+		(window as Window & { releaseTurn?: () => void }).releaseTurn?.(),
+	)
+	await expect
+		.poll(() =>
+			view.evaluate(
+				(element) =>
+					(
+						element as HTMLElement & {
+							renderer: { getContents(): { doc: Document }[] }
+						}
+					).renderer
+						.getContents()[0]
+						.doc.querySelector('img')?.alt,
+			),
+		)
+		.toBe('P2')
+	await cdp.detach()
+})
+
+test('filtered publisher image stays filtered during the outgoing swipe', async ({
+	page,
+}) => {
+	const view = await openFixedEpub(
+		page,
+		'width:100%;height:100%;object-fit:contain;filter:invert(1)',
+	)
+	await view.evaluate((element) => {
+		const renderer = (
+			element as HTMLElement & {
+				renderer: { goTo: (...args: unknown[]) => Promise<void> }
+			}
+		).renderer
+		const goTo = renderer.goTo.bind(renderer)
+		let release!: () => void
+		const gate = new Promise<void>((resolve) => (release = resolve))
+		;(
+			window as Window & { releaseTurn?: () => void; turnStarted?: boolean }
+		).releaseTurn = release
+		renderer.goTo = async (...args) => {
+			if ((args[0] as { index?: number } | undefined)?.index !== 1)
+				return goTo(...args)
+			;(window as Window & { turnStarted?: boolean }).turnStarted = true
+			await gate
+			await goTo(...args)
+		}
+	})
+	const box = await page.locator('[data-reader-spread]').boundingBox()
+	const cdp = await page.context().newCDPSession(page)
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: [
+			{ x: box!.x + box!.width * 0.65, y: box!.y + box!.height / 2 },
+		],
+	})
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchMove',
+		touchPoints: [
+			{ x: box!.x + box!.width * 0.57, y: box!.y + box!.height / 2 },
+		],
+	})
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchEnd',
+		touchPoints: [],
+	})
+	await page.waitForFunction(() =>
+		Boolean((window as Window & { turnStarted?: boolean }).turnStarted),
+	)
+	const bounds = await page.locator('[data-reader-spread]').boundingBox()
+	const screenshot = await page.screenshot({
+		clip: {
+			x: bounds!.x,
+			y: bounds!.y,
+			width: bounds!.width,
+			height: bounds!.height,
+		},
+	})
+	const pixel = await page.evaluate(
+		async (data) => {
+			const image = new Image()
+			image.src = data
+			await image.decode()
+			const canvas = document.createElement('canvas')
+			canvas.width = image.width
+			canvas.height = image.height
+			const context = canvas.getContext('2d')!
+			context.drawImage(image, 0, 0)
+			return [
+				...context.getImageData(
+					Math.floor(image.width * 0.35),
+					Math.floor(image.height * 0.5),
+					1,
+					1,
+				).data,
+			]
+		},
+		`data:image/png;base64,${screenshot.toString('base64')}`,
+	)
+	expect(pixel[0]).toBeLessThan(80)
+	expect(pixel[2]).toBeGreaterThan(150)
+	await page.evaluate(() =>
+		(window as Window & { releaseTurn?: () => void }).releaseTurn?.(),
+	)
+	await expect
+		.poll(() =>
+			view.evaluate(
+				(element) =>
+					(
+						element as HTMLElement & {
+							renderer: { getContents(): { doc: Document }[] }
+						}
+					).renderer
+						.getContents()[0]
+						.doc.querySelector('img')?.alt,
+			),
+		)
+		.toBe('P2')
+	await cdp.detach()
+})
 
 test('fixed-layout EPUB navigates real pages and clamps the final spread', async ({
 	page,
@@ -46,7 +576,9 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
 				const view = element as HTMLElement & {
 					renderer?: { getContents(): { doc: Document }[] }
 				}
-				return view.renderer?.getContents()[0]?.doc.body.innerText ?? ''
+				return (
+					view.renderer?.getContents()[0]?.doc.querySelector('img')?.alt ?? ''
+				)
 			})
 	await expect
 		.poll(async () => `${await text('primary')}|${await text('secondary')}`)

@@ -1,5 +1,7 @@
 import type { FoliateViewElement } from 'foliate-js/view.js'
 
+import { captureEpubImages } from '#lib/reader/epub-snapshot'
+
 type Direction = 'rtl' | 'ltr'
 type Turn = (next: boolean) => void | Promise<void>
 type Point = { x: number; y: number }
@@ -37,6 +39,13 @@ const createSwipe = (
 	let clickTimer = 0
 	let suppressClick = false
 	let gesture = 0
+	let turning = false
+	let releasePresentation: (() => void) | undefined
+
+	const clearPresentation = () => {
+		releasePresentation?.()
+		releasePresentation = undefined
+	}
 
 	const reset = () => {
 		animation?.cancel()
@@ -55,19 +64,30 @@ const createSwipe = (
 		return next ? !renderer?.atEnd : !renderer?.atStart
 	}
 	const onStart = (event: TouchEvent) => {
-		suppressClick = false
-		window.clearTimeout(clickTimer)
 		const target = event.target
 		const current = event.currentTarget as Node
 		const doc =
 			current.nodeType === 9
 				? (current as Document)
 				: (current.ownerDocument ?? host.ownerDocument)
-		if (
-			event.touches.length !== 1 ||
-			interactiveTarget(target) ||
-			Boolean(doc.getSelection()?.toString())
-		) {
+		if (interactiveTarget(target) || Boolean(doc.getSelection()?.toString())) {
+			if (!turning) {
+				start = null
+				startDocument = null
+				gesture += 1
+				reset()
+				suppressClick = false
+				window.clearTimeout(clickTimer)
+			}
+			return
+		}
+		if (turning) {
+			event.stopImmediatePropagation()
+			return
+		}
+		suppressClick = false
+		window.clearTimeout(clickTimer)
+		if (event.touches.length !== 1) {
 			start = null
 			startDocument = null
 			reset()
@@ -141,28 +161,19 @@ const createSwipe = (
 			suppressClick = false
 		}, 500)
 		const ownGesture = gesture
-		if (!reducedMotion()) {
-			animation?.cancel()
-			surface.style.transform = ''
-			animation = surface.animate(
-				[
-					{ transform: `translateX(${dx}px)` },
-					{ transform: `translateX(${Math.sign(dx) * surface.clientWidth}px)` },
-				],
-				{ duration: 110, easing: 'ease-out' },
-			)
-			const active = animation
-			void active.finished
-				.then(() => {
-					if (animation !== active || gesture !== ownGesture) return
-					finishAnimation(ownGesture)
-				})
-				.catch(() => undefined)
-		} else reset()
-		void Promise.resolve(turn(next))
+		turning = true
+		releasePresentation = captureEpubImages(surface)
+		animation?.cancel()
+		animation = null
+		surface.style.transform = reducedMotion() ? '' : `translateX(${dx}px)`
+		void Promise.resolve()
+			.then(() => turn(next))
 			.catch(() => undefined)
 			.finally(() => {
-				if (gesture === ownGesture) finishAnimation(ownGesture)
+				clearPresentation()
+				if (gesture !== ownGesture) return
+				turning = false
+				finishAnimation(ownGesture)
 			})
 	}
 	const onCancel = (event: Event) => {
@@ -174,6 +185,7 @@ const createSwipe = (
 		settle(matrix.m41)
 	}
 	const onRelocate = () => {
+		if (turning) return
 		gesture += 1
 		start = null
 		startDocument = null
@@ -225,6 +237,8 @@ const createSwipe = (
 		attach,
 		close: () => {
 			gesture += 1
+			turning = false
+			clearPresentation()
 			start = null
 			startDocument = null
 			reset()
