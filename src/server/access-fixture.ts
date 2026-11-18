@@ -1,6 +1,5 @@
-import { setSystemTime } from 'bun:test'
-
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
+import { vi } from 'vitest'
 
 import type { AccessEnv } from '#server/access.ts'
 
@@ -54,10 +53,11 @@ export const setupJwks = async () => {
 			throw new Error(`Unexpected network request: ${url}`)
 		return new Response(JSON.stringify({ keys: [jwk] }))
 	}) as typeof fetch
-	setSystemTime(fixedNow)
+	vi.useFakeTimers({ toFake: ['Date'] })
+	vi.setSystemTime(fixedNow)
 }
 
 export const resetJwks = () => {
 	globalThis.fetch = originalFetch
-	setSystemTime()
+	vi.useRealTimers()
 }

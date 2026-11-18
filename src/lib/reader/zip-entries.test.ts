@@ -1,6 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-
 import type { Entry } from '@zip.js/zip.js'
+import { describe, expect, test } from 'vitest'
 
 import { collectZipEntries } from '#lib/reader/zip-entries'
 
@@ -39,7 +38,7 @@ describe('collectZipEntries', () => {
 			}
 		}
 		const failure = new Error('custom EPUB limit')
-		expect(collectZipEntries(source(), failure.message)).rejects.toThrow(
+		await expect(collectZipEntries(source(), failure.message)).rejects.toThrow(
 			failure,
 		)
 		await iteratorClosed
@@ -52,6 +51,6 @@ describe('collectZipEntries', () => {
 			yield entry('first.txt', 1)
 			throw failure
 		}
-		expect(collectZipEntries(source())).rejects.toBe(failure)
+		await expect(collectZipEntries(source())).rejects.toBe(failure)
 	})
 })

@@ -10,9 +10,11 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
 
-const workflow = Bun.YAML.parse(
+import { test } from 'vitest'
+import { parse } from 'yaml'
+
+const workflow = parse(
 	await readFile(
 		new URL('../../.github/workflows/ci-cd.yml', import.meta.url),
 		'utf8',
@@ -74,7 +76,7 @@ const runScriptWithStub = async (
 	}
 }
 
-void test('validates committed migrations locally without cloud credentials', async () => {
+test('validates committed migrations locally without cloud credentials', async () => {
 	const migrationStep = workflow.jobs.validate.steps.find(
 		({ name }) => name === 'Validate local database migrations',
 	)
@@ -98,7 +100,7 @@ void test('validates committed migrations locally without cloud credentials', as
 	assert.equal(failed.calls, '--no-install void db migrate\n')
 })
 
-void test('deploys using service credentials without a human token', async () => {
+test('deploys using service credentials without a human token', async () => {
 	const result = await runScriptWithStub(runScript, {
 		CLOUDFLARE_API_TOKEN: 'management-token',
 		CF_ACCESS_CLIENT_ID: 'service-id',
@@ -109,7 +111,7 @@ void test('deploys using service credentials without a human token', async () =>
 	assert.equal(result.calls, '--no-install void deploy --platform cloudflare\n')
 })
 
-void test('missing required credentials fail before deployment, even with old token', async () => {
+test('missing required credentials fail before deployment, even with old token', async () => {
 	for (const missing of [
 		'CLOUDFLARE_API_TOKEN',
 		'CF_ACCESS_CLIENT_ID',
@@ -130,7 +132,7 @@ void test('missing required credentials fail before deployment, even with old to
 	}
 })
 
-void test('propagates deployment failure', async () => {
+test('propagates deployment failure', async () => {
 	const result = await runScriptWithStub(
 		runScript,
 		{

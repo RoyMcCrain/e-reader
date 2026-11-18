@@ -61,7 +61,7 @@ jobs:
         shell: bash
 
       - name: Unit tests
-        run: bun test
+        run: bun run test
         shell: bash
 
       - name: R2 storage test
