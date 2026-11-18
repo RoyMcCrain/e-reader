@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'vitest'
 
 import {
 	refreshPositionSession,
@@ -58,7 +58,7 @@ describe('reader position refresh', () => {
 		await savePosition(unrelatedId, localCfi)
 		let gets = 0
 		let posts = 0
-		globalThis.fetch = (async (_input, init) => {
+		globalThis.fetch = async (_input, init) => {
 			if (init?.method === 'PUT') {
 				posts += 1
 				return new Response('{}', { status: 500 })
@@ -69,7 +69,7 @@ describe('reader position refresh', () => {
 				status: 200,
 				headers: { 'content-type': 'application/json' },
 			})
-		}) as typeof fetch
+		}
 		const epub = makeEpub()
 		const options = { bookId: localId, epub, isCurrent: () => true }
 
@@ -85,45 +85,42 @@ describe('reader position refresh', () => {
 
 	test('a concurrent save rejects adoption and rolls the renderer back to newest local state', async () => {
 		await savePosition(concurrentId, localCfi)
-		globalThis.fetch = Object.assign(
-			async (_input: RequestInfo | URL, init?: RequestInit) => {
-				if (init?.method === 'PUT') {
-					const body: unknown =
-						typeof init.body === 'string' ? JSON.parse(init.body) : undefined
-					if (
-						body &&
-						typeof body === 'object' &&
-						'cfi' in body &&
-						'mutationId' in body &&
-						'baseRevision' in body
+		globalThis.fetch = async (
+			_input: RequestInfo | URL,
+			init?: RequestInit,
+		) => {
+			if (init?.method === 'PUT') {
+				const body: unknown =
+					typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+				if (
+					body &&
+					typeof body === 'object' &&
+					'cfi' in body &&
+					'mutationId' in body &&
+					'baseRevision' in body
+				)
+					return new Response(
+						JSON.stringify({
+							position: {
+								cfi: body.cfi,
+								mutationId: body.mutationId,
+								revision: Number(body.baseRevision) + 1,
+							},
+						}),
+						{ status: 200, headers: { 'content-type': 'application/json' } },
 					)
-						return new Response(
-							JSON.stringify({
-								position: {
-									cfi: body.cfi,
-									mutationId: body.mutationId,
-									revision: Number(body.baseRevision) + 1,
-								},
-							}),
-							{ status: 200, headers: { 'content-type': 'application/json' } },
-						)
-				}
-				return new Response(JSON.stringify({ position: remote }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				})
-			},
-			{ preconnect: originalFetch.preconnect },
-		)
+			}
+			return new Response(JSON.stringify({ position: remote }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			})
+		}
 		await syncPosition(concurrentId)
-		globalThis.fetch = Object.assign(
-			async () =>
-				new Response(JSON.stringify({ position: remote }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				}),
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ position: remote }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			})
 		const epub = makeEpub(async () => savePosition(concurrentId, latestCfi))
 
 		const result = await refreshPositionSession({
@@ -145,14 +142,11 @@ describe('reader position refresh', () => {
 			revision: 1,
 			mutationId: remote.mutationId,
 		})
-		globalThis.fetch = Object.assign(
-			async () =>
-				new Response(JSON.stringify({ position: remote }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				}),
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ position: remote }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			})
 		epoch = 1
 		displayed = userCfi
 		const epub = makeEpub()

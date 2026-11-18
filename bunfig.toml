@@ -1,5 +1,0 @@
-[test]
-pathIgnorePatterns = [
-	"**/library-r2.test.ts",
-	"**/reading-positions-d1.test.ts",
-]

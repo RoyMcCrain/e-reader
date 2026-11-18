@@ -8,5 +8,10 @@
 	"tabWidth": 2,
 	"sortImports": { "sortSideEffects": false },
 	"sortPackageJson": { "sortScripts": true },
-	"ignorePatterns": ["src/routeTree.gen.ts", "bun.lock"]
+	"ignorePatterns": [
+		"src/routeTree.gen.ts",
+		"bun.lock",
+		".agents/skills/mutator/**",
+		".agents/skills/mutation-test-loop/**"
+	]
 }

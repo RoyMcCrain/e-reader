@@ -1,0 +1,14 @@
+{
+	"$schema": "./node_modules/@mizchi/mutator/schema/mutator.config.schema.json",
+	"runner": "vitest",
+	"vitestConfig": "./vitest.config.ts",
+	"include": [
+		"src/lib/reader/layout.ts",
+		"src/lib/reader/progress.ts",
+		"src/lib/reader/preferences.ts",
+		"src/lib/reader/zip-entries.ts",
+		"src/server/access.ts",
+		"src/server/library.ts"
+	],
+	"concurrency": 2
+}

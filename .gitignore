@@ -21,8 +21,6 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage
 *.lcov
-.stryker-tmp/
-/reports/mutation/
 
 # nyc test coverage
 .nyc_output
@@ -172,3 +170,6 @@ test-results/
 # Private cloud library metadata and staging files
 /library.json
 /books/
+
+# Local mutator reports and cache
+/.mutator/

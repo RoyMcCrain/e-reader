@@ -19,13 +19,19 @@ bun run dev
 bun run typecheck
 bun run lint
 bun run format:check
-bun test
+bun run test
 bun run test:r2
 bun run test:d1
 bun run build
 ```
 
-`e2e/` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。server の高速な Bun テストは認証ルールと書庫 API の契約を検証し、`bun run test` で実行します。`bun run test:r2` と `bun run test:d1` は Node.js 上の Miniflare を使うローカル R2/D1 の接続テストです。テストファイルは `.test.ts` 命名を使います。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
+`e2e/` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。テストファイルは `.test.ts` 命名を使い、server の認証・書庫 API の契約テストも Vitest で実行します。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
+
+テストの実行先は次のとおりです。
+
+- `bun run test`: `src` 配下の単体テスト（reader、server、deploy）を Vitest（Node.js 上、`vitest.config.ts`）で実行します。CI の単体テストもこのコマンドです。
+- `bun run test:r2` と `bun run test:d1`: Node.js 上の Miniflare を使うローカル R2/D1 の接続テスト。`bun run test` には含まれず、CI では別ステップで実行します。
+- `bun run test:e2e` と `bun run test:pwa`: Playwright による E2E。変更はありません。
 
 ブラウザーテストは Chromium を初回インストールしてから実行します。
 
@@ -48,19 +54,36 @@ bun run build && bun run test:pwa
 
 ## Mutation testing
 
-reader のユニットテストと、認証・書庫 API の server ユニットテストが、実際のコード変更を検出できるかを StrykerJS で確認します。対象は `src/lib/reader/layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts` と `src/server/access.ts`、`library.ts` です。
+Mutation testing は任意の診断で、通常のテストや CI の必須条件ではありません。対象を絞って使います。
+
+### reader と server: @mizchi/mutator（Vitest）
+
+`src/lib/reader` の 4 モジュール（`layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts`）と、`src/server` の `access.ts`、`library.ts` を `@mizchi/mutator` 0.3.0 と Vitest 5.1.1 で診断します。設定は `mutator.config.json`、`vitest.config.ts` にあります。ツールは dev 依存としてインストール済みで、実行時に `npx` で取得しません。
 
 ```bash
-bun run test:mutation
-# 1 モジュールに絞る例
-bun run test:mutation --mutate src/lib/reader/layout.ts
-# server の認証・書庫 API だけを対象にする例
-bun run test:mutation --mutate 'src/server/access.ts,src/server/library.ts'
+bun --no-env-file run test:mutator --include src/server/library.ts
+# 結果を agent 向け JSON に保存する例
+mkdir -p .mutator
+bun --no-env-file run test:mutator --include src/server/library.ts --reporter agent > .mutator/library.json
 ```
 
-各 mutant ごとに command runner が Bun で reader と server のユニットテスト一式を実行します（テスト単位の coverage 分析ではありません）。認証・書庫 API の契約テストは Bun、ローカル R2/D1 を使うストレージ接続テストはそれぞれ `bun run test:r2` と `bun run test:d1` で別々に実行します。Mutation testing は R2/D1 接続テストや E2E を実行せず、通常の test や CI に自動実行を追加していません。HTML レポートは `reports/mutation/mutation.html`、JSON レポートは `reports/mutation/mutation.json` に出力されます。
+- 引数なしでは `mutator.config.json` の 6 モジュールが対象です。`--include` で、Vitest が同じプロセス内で実行する実装ファイルに対象を絞れます。`src/deploy` の子プロセス内の処理は対象にしません。
+- `CompileError`（TypeScript が拒否した mutant）は実行時のテスト不足とは別に分類し、その数を記録します。
+- 既定では生存 mutant を表示します。スコアによる失敗判定や自動 `accept` は使いません。`accept` で未分類の生存 mutant を許容しないでください。
+- キャッシュと保存したレポートは `.mutator/` 以下に置き、コミットしません。外部 CDN を読み込まないよう、ローカルではテキストまたは JSON レポートを使います。
+- Git の checkout で `--since <ref>` を使うと、その ref からの差分だけを対象にできます。テストだけの差分は `--include-test-changes` を併用します。未追跡の新規テストを確認するときは、対応する実装ファイルを `--include` で指定します。Git 履歴が見えない非 colocated の jj workspace では `--since` を使わないでください。
 
 `Survived` は、挙動を検証するテストが不足していないか、または等価 mutant ではないかを調査する手掛かりです。Mutation score だけでテスト品質は保証されず、100% を必須にはしません。
+
+### エージェントが生成・変更したテストの確認
+
+1. `bun run test`、`bun run typecheck`、`bun run lint`、`bun run format:check` で通常の検証を行います。
+2. 意味のある変更がある場合、対象モジュールに絞って `test:mutator --include` で診断します。結果は対象範囲と証拠（検出・生存の数）とともに記録し、限界も残します。
+3. 追加したテストの検出力を評価するときは、同じソースと同じ mutant の集合で、追加前後の検出結果を比べます。
+4. 生存 mutant は、挙動の変化、等価 mutant、対象範囲外のいずれかを調べて分類します。分類できないものは未確認として残し、等価とみなさないでください。
+5. 指標のためだけのテストや、カバレッジ上げのための skip・削除は行いません。
+
+公式の `mutator` と `mutation-test-loop` は `.agents/skills/` に原本のまま配置しています。上流の `npx mutator` や CI の設定例ではなく、上記のローカルコマンドを使ってください。依存が未導入なら `bun install --frozen-lockfile` で準備します。
 
 ## 読む・設定する
 

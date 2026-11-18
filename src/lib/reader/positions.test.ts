@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { ok, rejects } from 'node:assert/strict'
 
 import { openDB } from 'idb'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 
 import {
 	adoptRemotePosition,
@@ -82,24 +82,24 @@ describe('position persistence and synchronization', () => {
 			release = resolve
 		})
 		const requests: ReturnType<typeof parseMutation>[] = []
-		globalThis.fetch = Object.assign(
-			async (_input: RequestInfo | URL, init?: RequestInit) => {
-				const body = parseMutation(init)
-				requests.push(body)
-				if (requests.length === 1) {
-					started?.()
-					await gate
-				}
-				return jsonResponse(200, {
-					position: {
-						cfi: body.cfi,
-						mutationId: body.mutationId,
-						revision: body.baseRevision + 1,
-					},
-				})
-			},
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async (
+			_input: RequestInfo | URL,
+			init?: RequestInit,
+		) => {
+			const body = parseMutation(init)
+			requests.push(body)
+			if (requests.length === 1) {
+				started?.()
+				await gate
+			}
+			return jsonResponse(200, {
+				position: {
+					cfi: body.cfi,
+					mutationId: body.mutationId,
+					revision: body.baseRevision + 1,
+				},
+			})
+		}
 		await savePosition(bookId, first)
 		const syncing = syncPosition(bookId)
 		await requestStarted
@@ -117,7 +117,7 @@ describe('position persistence and synchronization', () => {
 	test('preserves a sending snapshot across a network failure and drains newer edits', async () => {
 		const requests: ReturnType<typeof parseMutation>[] = []
 		let fail = true
-		globalThis.fetch = (async (_input, init) => {
+		globalThis.fetch = async (_input, init) => {
 			const body = parseMutation(init)
 			requests.push(body)
 			if (fail) throw new Error('offline')
@@ -128,7 +128,7 @@ describe('position persistence and synchronization', () => {
 					revision: body.baseRevision + 1,
 				},
 			})
-		}) as typeof fetch
+		}
 
 		await savePosition(bookId, first)
 		expect(await syncPosition(bookId)).toBe('pending')
@@ -158,21 +158,21 @@ describe('position persistence and synchronization', () => {
 		const gate = new Promise<void>((resolve) => {
 			release = resolve
 		})
-		globalThis.fetch = Object.assign(
-			async (_input: RequestInfo | URL, init?: RequestInit) => {
-				const mutation = parseMutation(init)
-				started?.()
-				await gate
-				return jsonResponse(200, {
-					position: {
-						cfi: mutation.cfi,
-						mutationId: mutation.mutationId,
-						revision: 8,
-					},
-				})
-			},
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async (
+			_input: RequestInfo | URL,
+			init?: RequestInit,
+		) => {
+			const mutation = parseMutation(init)
+			started?.()
+			await gate
+			return jsonResponse(200, {
+				position: {
+					cfi: mutation.cfi,
+					mutationId: mutation.mutationId,
+					revision: 8,
+				},
+			})
+		}
 
 		const syncing = syncPosition(bookId)
 		await requestStarted
@@ -193,10 +193,7 @@ describe('position persistence and synchronization', () => {
 	})
 
 	test('keeps conflicts pending and rebases the explicit local choice on remote revision', async () => {
-		globalThis.fetch = Object.assign(
-			async () => jsonResponse(409, { position: remote }),
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async () => jsonResponse(409, { position: remote })
 		await savePosition(bookId, first)
 		expect(await syncPosition(bookId)).toBe('conflict')
 		expect((await loadPosition(bookId))?.pending).toBe(true)
@@ -205,35 +202,30 @@ describe('position persistence and synchronization', () => {
 		const rebased = await loadPosition(bookId)
 		expect(rebased?.baseRevision).toBe(remote.revision)
 		expect(rebased?.cfi).toBe(first)
-		globalThis.fetch = (async (_input, init) => {
+		globalThis.fetch = async (_input, init) => {
 			const body = parseMutation(init)
 			expect(body.baseRevision).toBe(7)
 			return jsonResponse(200, {
 				position: { cfi: body.cfi, mutationId: body.mutationId, revision: 8 },
 			})
-		}) as typeof fetch
+		}
 		expect(await syncPosition(bookId)).toBe('synced')
 	})
 
 	test('null conflicts remain conflicts across retries and local resolution rebases to zero', async () => {
-		globalThis.fetch = Object.assign(
-			async () => jsonResponse(409, { position: null }),
-			{
-				preconnect: originalFetch.preconnect,
-			},
-		)
+		globalThis.fetch = async () => jsonResponse(409, { position: null })
 		await savePosition(bookId, first)
 		expect(await syncPosition(bookId)).toBe('conflict')
 		expect(await syncPosition(bookId)).toBe('conflict')
 		await chooseLocalPosition(bookId)
 		expect((await loadPosition(bookId))?.baseRevision).toBe(0)
-		globalThis.fetch = (async (_input, init) => {
+		globalThis.fetch = async (_input, init) => {
 			const body = parseMutation(init)
 			expect(body.baseRevision).toBe(0)
 			return jsonResponse(200, {
 				position: { cfi: body.cfi, mutationId: body.mutationId, revision: 1 },
 			})
-		}) as typeof fetch
+		}
 		expect(await syncPosition(bookId)).toBe('synced')
 		expect((await loadPosition(bookId))?.pending).toBe(false)
 	})
@@ -257,10 +249,7 @@ describe('position persistence and synchronization', () => {
 	})
 
 	test('rejects a response that does not exactly acknowledge the sending snapshot', async () => {
-		globalThis.fetch = Object.assign(
-			async () => jsonResponse(200, { position: remote }),
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async () => jsonResponse(200, { position: remote })
 		await savePosition(bookId, first)
 		expect(await syncPosition(bookId)).toBe('pending')
 		const row = await loadPosition(bookId)
@@ -273,32 +262,26 @@ describe('position persistence and synchronization', () => {
 		const failingBookId = 'd'.repeat(64)
 		const healthyBookId = 'e'.repeat(64)
 		await savePosition(conflictBookId, first)
-		globalThis.fetch = Object.assign(
-			async () => jsonResponse(409, { position: remote }),
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async () => jsonResponse(409, { position: remote })
 		expect(await syncPosition(conflictBookId)).toBe('conflict')
 
 		await savePosition(failingBookId, first)
 		await savePosition(healthyBookId, second)
 		const attemptedBooks: string[] = []
-		globalThis.fetch = Object.assign(
-			async (input: RequestInfo | URL, init?: RequestInit) => {
-				const requestUrl = input instanceof Request ? input.url : String(input)
-				const book = requestUrl.split('/').at(-1)
-				if (book) attemptedBooks.push(book)
-				const body = parseMutation(init)
-				if (book === failingBookId) return jsonResponse(413, {})
-				return jsonResponse(200, {
-					position: {
-						cfi: body.cfi,
-						mutationId: body.mutationId,
-						revision: body.baseRevision + 1,
-					},
-				})
-			},
-			{ preconnect: originalFetch.preconnect },
-		)
+		globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+			const requestUrl = input instanceof Request ? input.url : String(input)
+			const book = requestUrl.split('/').at(-1)
+			if (book) attemptedBooks.push(book)
+			const body = parseMutation(init)
+			if (book === failingBookId) return jsonResponse(413, {})
+			return jsonResponse(200, {
+				position: {
+					cfi: body.cfi,
+					mutationId: body.mutationId,
+					revision: body.baseRevision + 1,
+				},
+			})
+		}
 
 		await flushPendingPositions()
 		expect(attemptedBooks).not.toContain(conflictBookId)
@@ -310,9 +293,7 @@ describe('position persistence and synchronization', () => {
 
 	test('auth failures report auth without clearing pending work', async () => {
 		for (const status of [401, 403]) {
-			globalThis.fetch = Object.assign(async () => jsonResponse(status, {}), {
-				preconnect: originalFetch.preconnect,
-			})
+			globalThis.fetch = async () => jsonResponse(status, {})
 			await savePosition(bookId, first)
 			expect(await syncPosition(bookId)).toBe('auth')
 			expect((await loadPosition(bookId))?.pending).toBe(true)

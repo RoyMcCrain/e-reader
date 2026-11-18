@@ -1,5 +1,3 @@
-import { describe, expect, test } from 'bun:test'
-
 import {
 	BlobWriter,
 	TextReader,
@@ -7,6 +5,7 @@ import {
 	ZipWriter,
 	type Entry,
 } from '@zip.js/zip.js'
+import { describe, expect, test } from 'vitest'
 
 import { openImageArchive, orderImages } from '#lib/reader/archive'
 
@@ -35,7 +34,7 @@ describe('ZIP画像順序', () => {
 			}
 		} as typeof original
 		try {
-			expect(
+			await expect(
 				openImageArchive(new File([new Uint8Array()], 'bounded.zip')),
 			).rejects.toThrow('上限を超えています')
 			expect(requested).toBe(5001)
@@ -55,7 +54,7 @@ describe('ZIP画像順序', () => {
 			if (second.every((byte, index) => bytes[offset + index] === byte))
 				bytes.set(first, offset)
 		}
-		expect(
+		await expect(
 			openImageArchive(new File([bytes], 'duplicate.zip')),
 		).rejects.toThrow('重複した画像項目')
 	})
@@ -98,7 +97,7 @@ describe('ZIP画像順序', () => {
 			expect(first).toBe(duplicate)
 			expect(created).toEqual([first])
 			await archive.close()
-			expect(archive.getUrl(0)).rejects.toThrow('閉じられています')
+			await expect(archive.getUrl(0)).rejects.toThrow('閉じられています')
 		} finally {
 			URL.createObjectURL = create
 		}
@@ -208,7 +207,7 @@ describe('ZIP画像順序', () => {
 				'blob:test-2',
 				'blob:test-3',
 			])
-			expect(archive.getUrl(4)).rejects.toThrow('閉じられています')
+			await expect(archive.getUrl(4)).rejects.toThrow('閉じられています')
 		} finally {
 			URL.createObjectURL = create
 			URL.revokeObjectURL = revoke

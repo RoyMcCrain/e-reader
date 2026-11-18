@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 
 import { awaitOwned, awaitWithAbort } from '#lib/reader/epub-layout'
 
@@ -19,7 +19,7 @@ describe('awaitWithAbort', () => {
 			await awaitWithAbort(Promise.resolve('ready'), controller.signal),
 		).toBe('ready')
 		const failure = new Error('failed')
-		expect(
+		await expect(
 			awaitWithAbort(Promise.reject(failure), controller.signal),
 		).rejects.toBe(failure)
 	})
@@ -29,7 +29,9 @@ describe('awaitWithAbort', () => {
 		controller.abort()
 		const rejection = Promise.reject(new Error('late rejection'))
 
-		expect(awaitWithAbort(rejection, controller.signal)).rejects.toMatchObject({
+		await expect(
+			awaitWithAbort(rejection, controller.signal),
+		).rejects.toMatchObject({
 			name: 'AbortError',
 		})
 		await new Promise<void>((resolve) => setImmediate(resolve))
@@ -103,7 +105,7 @@ describe('awaitOwned', () => {
 	test('propagates ordinary rejection without cleaning up', async () => {
 		const failure = new Error('resource failed')
 		const cleaned: string[] = []
-		expect(
+		await expect(
 			awaitOwned(
 				Promise.reject(failure),
 				new AbortController().signal,
