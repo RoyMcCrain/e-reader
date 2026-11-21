@@ -28,6 +28,10 @@
 	font-size: 10px;
 	letter-spacing: 0.16em;
 }
+.bookshelfLink {
+	color: #52694e;
+	font-weight: 600;
+}
 .intro {
 	width: min(570px, 100%);
 	margin: auto;

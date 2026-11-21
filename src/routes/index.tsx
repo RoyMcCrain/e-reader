@@ -42,6 +42,11 @@ function Home() {
 				<p>
 					端末から選んだ本はアップロードされません。クラウドの本は非公開ストレージから読み込みます。
 				</p>
+				<p>
+					<a className={styles.bookshelfLink} href="/bookshelf">
+						本棚を開く
+					</a>
+				</p>
 				<Library cancelPending={cancelCloudDownload} />
 				<div
 					className={`${styles.drop} ${dragging ? styles.active : ''}`}
@@ -90,7 +95,9 @@ function Home() {
 			<footer className={styles.foot}>
 				<button
 					className={styles.settingsLink}
-					onClick={() => void navigate({ to: '/config' })}
+					onClick={() =>
+						void navigate({ to: '/config', search: { from: undefined } })
+					}
 				>
 					設定
 				</button>

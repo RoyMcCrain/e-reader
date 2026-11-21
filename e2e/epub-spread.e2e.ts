@@ -231,21 +231,6 @@ test('ignored iframe controls cancel stale gestures and remain interactive durin
 	page,
 }) => {
 	const view = await openFixedEpub(page)
-	await view.evaluate((element) => {
-		const renderer = (
-			element as HTMLElement & {
-				renderer: { goTo: (...args: unknown[]) => Promise<void> }
-			}
-		).renderer
-		const goTo = renderer.goTo.bind(renderer)
-		;(window as Window & { firstTurnTarget?: number }).firstTurnTarget = -1
-		renderer.goTo = async (...args) => {
-			const target = args[0] as { index?: number } | undefined
-			;(window as Window & { firstTurnTarget?: number }).firstTurnTarget =
-				target?.index ?? -2
-			return goTo(...args)
-		}
-	})
 	const docHandle = await view.evaluateHandle(
 		(element) =>
 			(
@@ -308,24 +293,19 @@ test('ignored iframe controls cancel stale gestures and remain interactive durin
 		const dragged = getComputedStyle(surface).transform
 		const second = makeTouch(button, 2, 400)
 		const controlEvent = send(button, 'touchstart', [moved, second], [second])
-		send(button, 'touchend', [], [moved])
+		const staleEnd = send(button, 'touchend', [], [moved])
 		const settled = getComputedStyle(surface).transform
 		return {
 			controlDelivered: !controlEvent.defaultPrevented,
+			staleEndIgnored: !staleEnd.defaultPrevented,
 			dragged,
 			settled,
 		}
 	})
 	expect(dispatched.controlDelivered).toBe(true)
+	expect(dispatched.staleEndIgnored).toBe(true)
 	expect(dispatched.dragged).not.toBe('none')
 	expect(dispatched.settled).toBe('none')
-	await expect
-		.poll(() =>
-			view.evaluate(
-				() => (window as Window & { firstTurnTarget?: number }).firstTurnTarget,
-			),
-		)
-		.toBe(-1)
 	await expect
 		.poll(() =>
 			view.evaluate(

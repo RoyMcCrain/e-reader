@@ -1,3 +1,4 @@
+import { validBookMetadata } from '#lib/library/metadata.ts'
 import type { LibraryResponse, CloudBook } from '#lib/library/types'
 import { checkAccess, type AccessEnv } from '#server/access.ts'
 
@@ -19,6 +20,8 @@ const baseHeaders = {
 	'X-Content-Type-Options': 'nosniff',
 }
 const idPattern = /^[a-f0-9]{64}$/
+const bookAssetPattern = /^\/api\/books\/([a-f0-9]{64})(\/cover)?$/
+const coverSizeLimit = 524_288
 // Control bytes are forbidden in filenames at both validation boundaries.
 // oxlint-disable-next-line no-control-regex
 const filenamePattern = /^[^/\\\u0000-\u001f\u007f]{1,240}$/u
@@ -48,7 +51,12 @@ const validSize = (size: unknown) =>
 const validBook = (value: unknown): value is CloudBook => {
 	if (!value || typeof value !== 'object') return false
 	const book = value as Record<string, unknown>
-	return validIdentity(book) && validName(book) && validSize(book.size)
+	return (
+		validIdentity(book) &&
+		validName(book) &&
+		validSize(book.size) &&
+		validBookMetadata(book)
+	)
 }
 
 const parseManifest = (text: string): LibraryResponse | null => {
@@ -61,8 +69,17 @@ const parseManifest = (text: string): LibraryResponse | null => {
 	return new Set(ids).size === books.length
 		? {
 				books: books.map((book) => {
-					const { id, name, format, size } = book as CloudBook
-					return { id, name, format, size }
+					const { id, name, format, size, series, uploadedAt, hasCover } =
+						book as CloudBook
+					return {
+						id,
+						name,
+						format,
+						size,
+						...(series === undefined ? {} : { series: series.trim() }),
+						...(uploadedAt === undefined ? {} : { uploadedAt }),
+						...(hasCover === undefined ? {} : { hasCover }),
+					}
 				}),
 			}
 		: null
@@ -98,6 +115,38 @@ const downloadBook = async (bucket: R2BucketLike, book: CloudBook) => {
 	})
 }
 
+const coverHeaders = (size: number) => ({
+	'Content-Type': 'image/webp',
+	'Content-Length': String(size),
+	'Cross-Origin-Resource-Policy': 'same-origin',
+	'Content-Security-Policy': "default-src 'none'; sandbox",
+})
+
+const serveCover = async (bucket: R2BucketLike, book: CloudBook) => {
+	if (book.hasCover !== true) return response('Not found', 404)
+	const object = await bucket.get(`covers/${book.id}.webp`)
+	if (!object?.body) return response('Not found', 404)
+	if (
+		!Number.isSafeInteger(object.size) ||
+		object.size < 1 ||
+		object.size > coverSizeLimit
+	) {
+		await object.body.cancel().catch(() => undefined)
+		return response('Not found', 404)
+	}
+	return response(object.body, 200, coverHeaders(object.size))
+}
+
+const serveBookAsset = async (bucket: R2BucketLike, pathname: string) => {
+	const match = bookAssetPattern.exec(pathname)
+	if (!match) return response('Not found', 404)
+	const manifest = await readManifest(bucket)
+	if (!manifest) return response('Service unavailable', 503)
+	const book = manifest.books.find((entry) => entry.id === match[1])
+	if (!book) return response('Not found', 404)
+	return match[2] ? serveCover(bucket, book) : downloadBook(bucket, book)
+}
+
 const serveLibrary = async (
 	request: Request,
 	env: LibraryEnv,
@@ -114,15 +163,7 @@ const serveLibrary = async (
 					})
 				: response('Invalid library manifest', 503)
 		}
-
-		const match = /^\/api\/books\/([a-f0-9]{64})$/.exec(pathname)
-		if (!match) return response('Not found', 404)
-		const manifest = await readManifest(env.BOOKS)
-		if (!manifest) return response('Service unavailable', 503)
-		const book = manifest.books.find((entry) => entry.id === match[1])
-		return book
-			? await downloadBook(env.BOOKS, book)
-			: response('Not found', 404)
+		return await serveBookAsset(env.BOOKS, pathname)
 	} catch {
 		return response('Service unavailable', 503)
 	}
