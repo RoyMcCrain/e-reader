@@ -4,43 +4,44 @@ EPUB と画像 ZIP を読む、日本語向けの小さな e-reader です。端
 
 ## 開発
 
-必要な環境: Bun 1.4.4、Node.js 26.13.1。
+必要な環境: [Vite+ CLI](https://viteplus.dev/guide/)（`vp`）と Node.js 26.13.1（`.node-version`）。`vp install` は `packageManager` で指定した pnpm 10.26.1 と `pnpm-lock.yaml` を使います。
 
 ```bash
-bun install --frozen-lockfile
+vp install --frozen-lockfile
 cp env.example .env
-bunx --no-install void prepare
-bun run dev
+vp exec void prepare
+vp dev
 ```
 
 主な確認コマンド:
 
 ```bash
-bun run typecheck
-bun run lint
-bun run format:check
-bun run test
-bun run test:r2
-bun run test:d1
-bun run build
+vp check
+vp exec tsc --noEmit
+vp test --config vitest.config.ts
+vp run test:r2
+vp run test:d1
+vp build
 ```
 
-`e2e/` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。テストファイルは `.test.ts` 命名を使い、server の認証・書庫 API の契約テストも Vitest で実行します。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `bunx --no-install void db migrate` で準備します。
+`vp check` は整形（`vp fmt`）、lint（`vp lint`、型情報つき）、型チェックをまとめて実行します。設定は `vite.config.ts` の `lint` と `fmt` にあります。`vp exec tsc --noEmit` は型チェックの並行確認です。
+
+`e2e/` は E2E とその helper 専用です。それ以外のテストは `src` 内で対応するコードの隣に置きます。テストファイルは `.test.ts` 命名を使い、server の認証・書庫 API の契約テストも Vitest で実行します。デプロイ処理とそのテストも `src/deploy` にあります。読書位置用のローカル D1 は `vp exec void db migrate` で準備します。
 
 テストの実行先は次のとおりです。
 
-- `bun run test`: `src` 配下の単体テスト（reader、server、deploy）を Vitest（Node.js 上、`vitest.config.ts`）で実行します。CI の単体テストもこのコマンドです。
-- `bun run test:r2` と `bun run test:d1`: Node.js 上の Miniflare を使うローカル R2/D1 の接続テスト。`bun run test` には含まれず、CI では別ステップで実行します。
-- `bun run test:e2e` と `bun run test:pwa`: Playwright による E2E。変更はありません。
+- `vp test --config vitest.config.ts`: `src` 配下の単体テスト（reader、server、deploy）を Vitest（Node.js 上、`vitest.config.ts`）で実行します。CI の単体テストもこのコマンドです。
+- `vp run test:r2` と `vp run test:d1`: Node.js 上の Miniflare を使うローカル R2/D1 の接続テスト。`vp test` には含まれず、CI では別ステップで実行します。
+- `vp run test:e2e` と `vp run test:pwa`: Playwright による E2E。テストの内容に変更はありません。
 
 ブラウザーテストは Chromium を初回インストールしてから実行します。
 
 ```bash
-bunx --bun --no-install playwright install chromium
-bun run test:e2e
+vp exec playwright install chromium
+vp run test:e2e
 ```
 
-本番ビルドのローカル確認は `bun run preview`（`http://localhost:4173`）です。
+本番ビルドのローカル確認は `vp preview`（`http://localhost:4173`）です。
 
 ## PWA
 
@@ -49,7 +50,7 @@ bun run test:e2e
 本番ビルド後に Chromium の PWA smoke test を実行します:
 
 ```bash
-bun run build && bun run test:pwa
+vp build && vp run test:pwa
 ```
 
 ## Mutation testing
@@ -58,13 +59,13 @@ Mutation testing は任意の診断で、通常のテストや CI の必須条�
 
 ### reader と server: @mizchi/mutator（Vitest）
 
-`src/lib/reader` の 4 モジュール（`layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts`）と、`src/server` の `access.ts`、`library.ts` を `@mizchi/mutator` 0.3.0 と Vitest 5.1.1 で診断します。設定は `mutator.config.json`、`vitest.config.ts` にあります。ツールは dev 依存としてインストール済みで、実行時に `npx` で取得しません。
+`src/lib/reader` の 4 モジュール（`layout.ts`、`progress.ts`、`preferences.ts`、`zip-entries.ts`）と、`src/server` の `access.ts`、`library.ts` を `@mizchi/mutator` 0.4.0 と Vitest（`vite-plus` の同梱版）で診断します。設定は `mutator.config.json`、`vitest.config.ts` にあります。ツールは dev 依存としてインストール済みで、実行時に `npx` で取得しません。
 
 ```bash
-bun --no-env-file run test:mutator --include src/server/library.ts
+vp run test:mutator --include src/server/library.ts
 # 結果を agent 向け JSON に保存する例
 mkdir -p .mutator
-bun --no-env-file run test:mutator --include src/server/library.ts --reporter agent > .mutator/library.json
+vp exec mutator --include src/server/library.ts --reporter agent > .mutator/library.json
 ```
 
 - 引数なしでは `mutator.config.json` の 6 モジュールが対象です。`--include` で、Vitest が同じプロセス内で実行する実装ファイルに対象を絞れます。`src/deploy` の子プロセス内の処理は対象にしません。
@@ -75,15 +76,31 @@ bun --no-env-file run test:mutator --include src/server/library.ts --reporter ag
 
 `Survived` は、挙動を検証するテストが不足していないか、または等価 mutant ではないかを調査する手掛かりです。Mutation score だけでテスト品質は保証されず、100% を必須にはしません。
 
+### Playwright による E2E mutation（実験的・任意）
+
+`@mizchi/mutator` 0.4.0 と `@mizchi/mutator-playwright` 0.4.0 で、ブラウザーの本棚コード（`src/lib/library/bookshelf.ts`）を Playwright の E2E から診断できます。これは実験的な任意の診断で、遅い（mutant ごとに Playwright のブラウザーテストを起動します）ため、CI の必須条件には含めません。
+
+```bash
+vp run test:mutator:e2e
+```
+
+- 設定は `mutator.playwright.config.json` と `playwright.mutation.config.ts` にあります。`playwright.mutation.config.ts` は通常の E2E 設定を継承し、`e2e/bookshelf.e2e.ts` だけを、専用の開発サーバー（`127.0.0.1:5187`、`reuseExistingServer: false`）で実行します。
+- 対象は本棚の 1 ファイル、`concurrency: 2`、行ごとに 1 mutant、時間予算 120 秒です。予算を超えた mutant は `Pending` のままになるため、結果は対象と予算の範囲でだけ読んでください。
+- 結果の `Pending`、`NoCoverage` は検出ではありません。`Killed` が実際のブラウザーテストで検出された mutant で、ブラウザーで実行されたことを確認するには `Killed` の件数と coverage を見てください。
+- 本と表紙は Playwright のフィクスチャを使います。開発サーバーがローカル設定を読み込むため、診断を隔離する場合は `.env`・書籍データ・本番資格情報のない作業コピーで実行してください。
+- 結果は `.mutator/` 以下に保存され、コミットしません。
+- 実行時間は mutant 数とマシンに依存し、数分から数十分かかることがあります。
+- 公式の使い方は `@mizchi/mutator-playwright` 同梱の skill（`node_modules/@mizchi/mutator-playwright/skills/mutator-playwright/SKILL.md`）を参照してください。
+
 ### エージェントが生成・変更したテストの確認
 
-1. `bun run test`、`bun run typecheck`、`bun run lint`、`bun run format:check` で通常の検証を行います。
+1. `vp check`、`vp exec tsc --noEmit`、`vp test --config vitest.config.ts` で通常の検証を行います。
 2. 意味のある変更がある場合、対象モジュールに絞って `test:mutator --include` で診断します。結果は対象範囲と証拠（検出・生存の数）とともに記録し、限界も残します。
 3. 追加したテストの検出力を評価するときは、同じソースと同じ mutant の集合で、追加前後の検出結果を比べます。
 4. 生存 mutant は、挙動の変化、等価 mutant、対象範囲外のいずれかを調べて分類します。分類できないものは未確認として残し、等価とみなさないでください。
 5. 指標のためだけのテストや、カバレッジ上げのための skip・削除は行いません。
 
-公式の `mutator` と `mutation-test-loop` は `.agents/skills/` に原本のまま配置しています。上流の `npx mutator` や CI の設定例ではなく、上記のローカルコマンドを使ってください。依存が未導入なら `bun install --frozen-lockfile` で準備します。
+公式の `mutator` と `mutation-test-loop` は `.agents/skills/` に原本のまま配置しています。上流の `npx mutator` や CI の設定例ではなく、上記のローカルコマンドを使ってください。依存が未導入なら `vp install --frozen-lockfile` で準備します。
 
 ## 読む・設定する
 

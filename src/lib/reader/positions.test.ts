@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { ok, rejects } from 'node:assert/strict'
 
 import { openDB } from 'idb'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import {
 	adoptRemotePosition,

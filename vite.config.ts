@@ -1,8 +1,105 @@
+import { mutatorVite } from '@mizchi/mutator-playwright/vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vite-plus'
 import { voidPlugin } from 'void'
 
 export default defineConfig({
-	plugins: [voidPlugin(), tanstackStart(), react({ compiler: true })],
+	plugins: [
+		mutatorVite(),
+		voidPlugin(),
+		tanstackStart(),
+		react({ compiler: true }),
+	],
+	lint: {
+		plugins: ['typescript', 'react', 'jsx-a11y'],
+		categories: {
+			correctness: 'error',
+		},
+		ignorePatterns: [
+			'src/routeTree.gen.ts',
+			'.void/**',
+			'node_modules/**',
+			'.cloudflare/**',
+			'dist/**',
+			'test-results/**',
+		],
+		options: {
+			typeAware: true,
+			typeCheck: true,
+		},
+		rules: {
+			'typescript/no-floating-promises': 'error',
+			'typescript/await-thenable': 'error',
+			'no-var': 'error',
+			'prefer-const': [
+				'error',
+				{ destructuring: 'any', ignoreReadBeforeAssign: false },
+			],
+			'prefer-rest-params': 'error',
+			'prefer-spread': 'error',
+			'typescript/ban-ts-comment': 'error',
+			'no-array-constructor': 'error',
+			'typescript/no-duplicate-enum-values': 'error',
+			'typescript/no-empty-object-type': 'error',
+			'typescript/no-extra-non-null-assertion': 'error',
+			'typescript/no-misused-new': 'error',
+			'typescript/no-namespace': 'error',
+			'typescript/no-non-null-asserted-optional-chain': 'error',
+			'typescript/no-require-imports': 'error',
+			'typescript/no-this-alias': 'error',
+			'typescript/no-unnecessary-type-constraint': 'error',
+			'typescript/no-unsafe-declaration-merging': 'error',
+			'typescript/no-unsafe-function-type': 'error',
+			'no-unused-expressions': [
+				'error',
+				{
+					allowShortCircuit: false,
+					allowTaggedTemplates: false,
+					allowTernary: false,
+				},
+			],
+			'no-unused-vars': [
+				'error',
+				{ vars: 'all', args: 'after-used', caughtErrors: 'all' },
+			],
+			'typescript/no-wrapper-object-types': 'error',
+			'typescript/prefer-as-const': 'error',
+			'typescript/prefer-namespace-keyword': 'error',
+			'typescript/triple-slash-reference': 'error',
+			'react/rules-of-hooks': 'error',
+			'react/exhaustive-deps': 'error',
+			'react/jsx-key': 'error',
+			'react/static-components': 'error',
+			'react/immutability': 'error',
+			'react/purity': 'error',
+			'react/refs': 'error',
+			'react/set-state-in-render': 'error',
+			'typescript/no-misused-promises': 'error',
+			'typescript/switch-exhaustiveness-check': 'error',
+			'typescript/no-explicit-any': 'error',
+			'typescript/no-unsafe-assignment': 'error',
+			'typescript/no-unsafe-call': 'error',
+			'typescript/no-unsafe-member-access': 'error',
+			'typescript/no-unsafe-argument': 'error',
+			'typescript/no-unsafe-return': 'error',
+			eqeqeq: ['error', 'always'],
+		},
+	},
+	fmt: {
+		singleQuote: true,
+		semi: false,
+		trailingComma: 'all',
+		printWidth: 80,
+		useTabs: true,
+		tabWidth: 2,
+		sortImports: { sortSideEffects: false },
+		sortPackageJson: { sortScripts: true },
+		ignorePatterns: [
+			'src/routeTree.gen.ts',
+			'pnpm-lock.yaml',
+			'.agents/skills/mutator/**',
+			'.agents/skills/mutation-test-loop/**',
+		],
+	},
 })
