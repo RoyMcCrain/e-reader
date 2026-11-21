@@ -1,0 +1,10 @@
+{
+	"$schema": "./node_modules/@mizchi/mutator/schema/mutator.config.schema.json",
+	"runner": "playwright",
+	"playwrightConfig": "playwright.mutation.config.ts",
+	"include": ["src/lib/library/bookshelf.ts"],
+	"concurrency": 2,
+	"mutantsPerLine": 1,
+	"timeBudget": 120,
+	"reportDir": ".mutator/playwright"
+}

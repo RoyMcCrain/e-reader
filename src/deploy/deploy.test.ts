@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { test } from 'vitest'
+import { test } from 'vite-plus/test'
 import { parse } from 'yaml'
 
 const workflow = parse(
@@ -51,7 +51,7 @@ const runScriptWithStub = async (
 		join(directory, 'src/deploy/deploy.sh'),
 	)
 	await writeFile(
-		join(bin, 'bunx'),
+		join(bin, 'vp'),
 		`#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "$DEPLOY_CALLS"\nexit "${commandStatus}"\n`,
 		{ mode: 0o755 },
 	)
@@ -93,11 +93,11 @@ test('validates committed migrations locally without cloud credentials', async (
 
 	const result = await runScriptWithStub(migrationStep.run, {})
 	assert.equal(result.status, 0, result.stderr)
-	assert.equal(result.calls, '--no-install void db migrate\n')
+	assert.equal(result.calls, 'exec void db migrate\n')
 
 	const failed = await runScriptWithStub(migrationStep.run, {}, 23)
 	assert.equal(failed.status, 23)
-	assert.equal(failed.calls, '--no-install void db migrate\n')
+	assert.equal(failed.calls, 'exec void db migrate\n')
 })
 
 test('deploys using service credentials without a human token', async () => {
@@ -108,7 +108,7 @@ test('deploys using service credentials without a human token', async () => {
 		CF_ACCESS_READINESS_ORIGIN: 'https://reader.rrrr.dev',
 	})
 	assert.equal(result.status, 0, result.stderr)
-	assert.equal(result.calls, '--no-install void deploy --platform cloudflare\n')
+	assert.equal(result.calls, 'exec void deploy --platform cloudflare\n')
 })
 
 test('missing required credentials fail before deployment, even with old token', async () => {
@@ -144,5 +144,5 @@ test('propagates deployment failure', async () => {
 		23,
 	)
 	assert.equal(result.status, 23)
-	assert.equal(result.calls, '--no-install void deploy --platform cloudflare\n')
+	assert.equal(result.calls, 'exec void deploy --platform cloudflare\n')
 })

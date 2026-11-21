@@ -5,7 +5,7 @@ import {
 	ZipWriter,
 	type Entry,
 } from '@zip.js/zip.js'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { openImageArchive, orderImages } from '#lib/reader/archive'
 

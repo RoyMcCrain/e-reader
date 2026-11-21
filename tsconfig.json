@@ -19,6 +19,7 @@
 		"e2e",
 		"playwright.config.ts",
 		"playwright.pwa.config.ts",
+		"playwright.mutation.config.ts",
 		"vite.config.ts",
 		"void.config.ts",
 		"db/schema.ts",

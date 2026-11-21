@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vite-plus/test'
 
 import { filterBooks, groupBooks, sortBooks } from './bookshelf'
 import type { CloudBook } from './types'

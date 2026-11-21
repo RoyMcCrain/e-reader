@@ -8,7 +8,7 @@ export default defineConfig({
 	testIgnore: '**/pwa.e2e.ts',
 	use: { baseURL: 'http://127.0.0.1:5173' },
 	webServer: {
-		command: 'bun run dev --host 127.0.0.1',
+		command: 'vp dev --host 127.0.0.1',
 		port: 5173,
 		reuseExistingServer: !env.CI,
 		timeout: 60_000,
