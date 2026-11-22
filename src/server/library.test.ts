@@ -355,7 +355,7 @@ describe('handleLibrary', () => {
 	})
 
 	test('enforces manifest entry and byte-size resource limits', async () => {
-		const books = Array.from({ length: 1000 }, (_, index) => ({
+		const books = Array.from({ length: 5_000 }, (_, index) => ({
 			...record,
 			id: index.toString(16).padStart(64, '0'),
 		}))

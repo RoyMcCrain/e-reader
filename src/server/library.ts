@@ -63,7 +63,7 @@ const parseManifest = (text: string): LibraryResponse | null => {
 	const manifest: unknown = JSON.parse(text)
 	if (!manifest || typeof manifest !== 'object') return null
 	const books = (manifest as { books?: unknown }).books
-	if (!Array.isArray(books) || books.length > 1000 || !books.every(validBook))
+	if (!Array.isArray(books) || books.length > 5_000 || !books.every(validBook))
 		return null
 	const ids = books.map((book) => (book as CloudBook).id)
 	return new Set(ids).size === books.length
