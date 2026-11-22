@@ -63,7 +63,7 @@ const parseManifest = (text: string): LibraryResponse | null => {
 	const manifest: unknown = JSON.parse(text)
 	if (!manifest || typeof manifest !== 'object') return null
 	const books = (manifest as { books?: unknown }).books
-	if (!Array.isArray(books) || books.length > 5_000 || !books.every(validBook))
+	if (!Array.isArray(books) || books.length > 10_000 || !books.every(validBook))
 		return null
 	const ids = books.map((book) => (book as CloudBook).id)
 	return new Set(ids).size === books.length
@@ -90,7 +90,8 @@ const readManifest = async (
 ): Promise<LibraryResponse | null> => {
 	const object = await bucket.get('library.json')
 	if (!object) return { books: [] }
-	if (!Number.isSafeInteger(object.size) || object.size > 1_048_576) return null
+	if (!Number.isSafeInteger(object.size) || object.size > 4 * 1024 * 1024)
+		return null
 	try {
 		return parseManifest(await object.text())
 	} catch {

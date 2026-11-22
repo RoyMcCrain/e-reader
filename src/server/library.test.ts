@@ -355,11 +355,11 @@ describe('handleLibrary', () => {
 	})
 
 	test('enforces manifest entry and byte-size resource limits', async () => {
-		const books = Array.from({ length: 5_000 }, (_, index) => ({
+		const books = Array.from({ length: 10_000 }, (_, index) => ({
 			...record,
 			id: index.toString(16).padStart(64, '0'),
 		}))
-		const exactLimit = JSON.stringify({ books: [] }).padEnd(1_048_576, ' ')
+		const exactLimit = JSON.stringify({ books: [] }).padEnd(4_194_304, ' ')
 		const maximumEntries = await handleLibrary(
 			await authorized('/api/books'),
 			envFor(bucketFor({ 'library.json': JSON.stringify({ books }) }).bucket),
