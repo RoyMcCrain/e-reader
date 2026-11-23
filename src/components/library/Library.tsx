@@ -1,8 +1,10 @@
+import { Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import { Bookshelf } from '#components/library/Bookshelf'
+import { Bookshelf, BookshelfBook } from '#components/library/Bookshelf'
 import { useReaderApp } from '#components/providers/ReaderProvider'
+import { sortBooks } from '#lib/library/bookshelf'
 import { validBookMetadata } from '#lib/library/metadata'
 import type { CloudBook } from '#lib/library/types'
 
@@ -10,7 +12,8 @@ import styles from '#components/library/Library.module.css'
 
 interface LibraryProps {
 	cancelPending: RefObject<(() => void) | null>
-	presentation?: 'list' | 'bookshelf'
+	presentation?: 'list' | 'bookshelf' | 'series'
+	seriesName?: string
 }
 
 const formatSize = (size: number) =>
@@ -199,9 +202,78 @@ const openCloudBook = async (
 	}
 }
 
+interface SeriesDetailsProps {
+	books: CloudBook[]
+	seriesName?: string
+	loading: boolean
+	listError: LibraryStateProps['listError']
+	retry: () => void
+	busyId: string
+	openBook: (book: CloudBook) => void
+	downloadError: string
+}
+
+const SeriesBookList = ({
+	books,
+	seriesName,
+	loading,
+	listError,
+	busyId,
+	openBook,
+}: SeriesDetailsProps) => {
+	const title = seriesName ?? 'シリーズ未設定'
+	if (loading || listError) return null
+	if (!books.length) return <p>このシリーズの本は見つかりません。</p>
+	return (
+		<ul className={styles.books} aria-label={`${title}の収録本`}>
+			{sortBooks(books, 'title').map((book) => (
+				<li key={book.id}>
+					<BookshelfBook book={book} busyId={busyId} openBook={openBook} />
+				</li>
+			))}
+		</ul>
+	)
+}
+
+const SeriesDetails = (props: SeriesDetailsProps) => {
+	const {
+		books,
+		seriesName,
+		loading,
+		listError,
+		retry,
+		busyId,
+		downloadError,
+	} = props
+
+	const title = seriesName ?? 'シリーズ未設定'
+	const selected = books.filter((book) => book.series === seriesName)
+	return (
+		<main className={`${styles.library} ${styles.series}`}>
+			<Link to="/bookshelf">本棚に戻る</Link>
+			<h1>{title}</h1>
+			{!loading && !listError && <p>{selected.length} 冊</p>}
+			<LibraryState
+				loading={loading}
+				listError={listError}
+				books={books}
+				retry={retry}
+			/>
+			<SeriesBookList {...props} books={selected} />
+			{busyId && <output>本をダウンロードしています…</output>}
+			{downloadError && (
+				<p role="alert" className={styles.error}>
+					{downloadError}
+				</p>
+			)}
+		</main>
+	)
+}
+
 export const Library = ({
 	cancelPending,
 	presentation = 'list',
+	seriesName,
 }: LibraryProps) => {
 	const { setFile } = useReaderApp()
 	const [books, setBooks] = useState<CloudBook[]>([])
@@ -229,24 +301,39 @@ export const Library = ({
 		if (!busyId) void openCloudBook(book, actions, cancelPending)
 	}
 
+	const retry = () => {
+		listController.current?.abort()
+		const controller = new AbortController()
+		listController.current = controller
+		void loadBooks(setBooks, setListError, setLoading, controller)
+	}
+
 	if (presentation === 'bookshelf')
 		return (
 			<Bookshelf
 				books={books}
 				loading={loading}
 				listError={listError}
-				retry={() => {
-					listController.current?.abort()
-					const controller = new AbortController()
-					listController.current = controller
-					void loadBooks(setBooks, setListError, setLoading, controller)
-				}}
+				retry={retry}
 				busyId={busyId}
 				openBook={openBook}
 				downloadError={downloadError}
 			/>
 		)
 
+	if (presentation === 'series')
+		return (
+			<SeriesDetails
+				books={books}
+				seriesName={seriesName}
+				loading={loading}
+				listError={listError}
+				retry={retry}
+				busyId={busyId}
+				openBook={openBook}
+				downloadError={downloadError}
+			/>
+		)
 	return (
 		<section className={styles.library} aria-labelledby="library-heading">
 			<h2 id="library-heading">クラウドの本</h2>

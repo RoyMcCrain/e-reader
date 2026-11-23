@@ -1,4 +1,5 @@
 import { expect, test } from '@mizchi/mutator-playwright'
+import type { Locator, Page } from '@playwright/test'
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
 const coverWebp = Buffer.from(
@@ -44,6 +45,42 @@ const makeZip = async () => {
 	const writer = new ZipWriter(new BlobWriter())
 	await writer.add('page.png', new Uint8ArrayReader(pixel))
 	return Buffer.from(await (await writer.close()).arrayBuffer())
+}
+
+// Shelf covers in every sort mode are links to the series detail.
+const coverLinks = (region: Locator) =>
+	region.getByRole('link', { name: /、(EPUB|ZIP)$/ })
+
+const mockLibrary = async (page: Page, list: object[], archive?: Buffer) => {
+	const requests = { books: 0 }
+	await page.route('**/api/reading-positions', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ positions: [] }),
+		}),
+	)
+	await page.route('**/api/books', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ books: list }),
+		}),
+	)
+	await page.route('**/api/books/**', async (route) => {
+		const url = new URL(route.request().url())
+		if (url.pathname.endsWith('/cover'))
+			return route.fulfill({ status: 404, body: 'Not found' })
+		requests.books += 1
+		if (!archive)
+			return route.fulfill({ status: 500, body: 'unexpected book request' })
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/zip',
+			body: archive,
+		})
+	})
+	return requests
 }
 
 test('bookshelf filters, groups, orders and fits mobile width', async ({
@@ -123,13 +160,19 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	expect(readBox!.y).toBeLessThan(allBox!.y)
 	expect(allBox!.y).toBeLessThan(uploadBox!.y)
 	const seriesHeading = all.getByRole('heading', { name: /星の旅/ })
-	const group = seriesHeading.locator('..')
-	const volumes = group.getByRole('button')
+	await expect(
+		seriesHeading.getByRole('link', { name: /星の旅/ }),
+	).toHaveAttribute(
+		'href',
+		'/bookshelf/series?name=%E6%98%9F%E3%81%AE%E6%97%85',
+	)
+	const row = all.getByRole('list', { name: '星の旅の本' })
+	const volumes = row.getByRole('link')
 	await expect(volumes).toHaveCount(2)
 	await expect(volumes.nth(0)).toHaveAccessibleName(/巻2/)
 	await expect(volumes.nth(1)).toHaveAccessibleName(/巻10/)
 	await expect(
-		all.getByRole('heading', { name: 'シリーズ未設定' }),
+		all.getByRole('heading', { name: /シリーズ未設定/ }),
 	).toBeVisible()
 
 	const recent = page.getByRole('region', { name: '最近アップロードされた本' })
@@ -151,16 +194,16 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 		)
 		.toBe(2)
 	const failedCover = all
-		.getByRole('button', { name: /別作品/ })
+		.getByRole('link', { name: /別作品/ })
 		.locator(`img[src="/api/books/${'c'.repeat(64)}/cover"]`)
 	await expect(failedCover).toHaveCSS('opacity', '0')
 	await expect(
 		all
-			.getByRole('button', { name: /別作品/ })
+			.getByRole('link', { name: /別作品/ })
 			.getByText('別作品', { exact: true }),
 	).toBeVisible()
 	await expect(
-		all.getByRole('button', { name: /未分類/ }).locator('img'),
+		all.getByRole('link', { name: /未分類/ }).locator('img'),
 	).toHaveCount(1)
 	await expect.poll(() => new Set(coverRequests).size).toBe(4)
 	expect(new Set(coverRequests)).toEqual(
@@ -169,16 +212,16 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	expect(bookRequests).toBe(0)
 
 	await page.getByLabel('タイトル・シリーズで検索').fill('月の')
-	await expect(all.getByRole('button')).toHaveCount(1)
+	await expect(coverLinks(all)).toHaveCount(1)
 	await page.getByLabel('形式').selectOption('zip')
-	await expect(all.getByRole('button')).toHaveCount(1)
-	await expect(all.getByRole('button')).toHaveAccessibleName(/別作品/)
+	await expect(coverLinks(all)).toHaveCount(1)
+	await expect(coverLinks(all)).toHaveAccessibleName(/別作品/)
 	await page.getByLabel('タイトル・シリーズで検索').fill('星の旅')
 	await expect(all.getByText('条件に合う本はありません。')).toBeVisible()
 	await page.getByRole('button', { name: '条件をクリア' }).click()
-	await expect(all.getByRole('button')).toHaveCount(4)
+	await expect(coverLinks(all)).toHaveCount(4)
 	await page.getByLabel('表示順').selectOption('newest')
-	const ordered = all.getByRole('button')
+	const ordered = coverLinks(all)
 	await expect(ordered.nth(0)).toHaveAccessibleName(/別作品/)
 	await expect(ordered.nth(1)).toHaveAccessibleName(/巻2/)
 	await expect(ordered.nth(2)).toHaveAccessibleName(/巻10/)
@@ -192,7 +235,7 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	await expect(searchInput).toHaveValue('存在しない本')
 	await searchToggle.click()
 	await page.getByRole('button', { name: '条件をクリア' }).click()
-	await expect(all.getByRole('button')).toHaveCount(4)
+	await expect(coverLinks(all)).toHaveCount(4)
 	await expect(page.getByRole('button', { name: '条件をクリア' })).toBeHidden()
 	await searchToggle.click()
 	await expect(searchInput).toBeVisible()
@@ -224,7 +267,7 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	await page.getByLabel('表示順').selectOption('newest')
 	await page.setViewportSize({ width: 720, height: 748 })
 	await expect(recent.getByRole('button')).toHaveCount(2)
-	await expect(all.getByRole('button')).toHaveCount(2)
+	await expect(coverLinks(all)).toHaveCount(2)
 	const firstResult = await ordered.nth(0).boundingBox()
 	const secondResult = await ordered.nth(1).boundingBox()
 	expect(firstResult).not.toBeNull()
@@ -235,17 +278,17 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	await expect(searchField).toHaveValue('巻')
 	await expect(page.getByLabel('形式')).toHaveValue('epub')
 	await expect(page.getByLabel('表示順')).toHaveValue('newest')
-	await expect(all.getByRole('button')).toHaveCount(2)
+	await expect(coverLinks(all)).toHaveCount(2)
 	await page.getByRole('button', { name: '条件をクリア' }).click()
 	await page.getByLabel('表示順').selectOption('series')
-	await expect(all.getByRole('button')).toHaveCount(4)
+	await expect(coverLinks(all)).toHaveCount(4)
 	await page.getByRole('main').evaluate((main) => {
 		main.scrollTop = main.scrollHeight
 	})
 	const footerBox = await footer.boundingBox()
 	const mainBox = await page.getByRole('main').boundingBox()
 	const lastBookBox = await all
-		.getByRole('button', { name: /未分類/ })
+		.getByRole('link', { name: /未分類/ })
 		.boundingBox()
 	expect(footerBox).not.toBeNull()
 	expect(mainBox).not.toBeNull()
@@ -255,6 +298,134 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 		footerBox!.y + 1,
 	)
 	expect(mainBox!.y + mainBox!.height).toBeLessThanOrEqual(footerBox!.y + 1)
+})
+
+test('keeps a long series in one scrollable carousel row at phone width', async ({
+	page,
+}) => {
+	const seriesName = '長いシリーズ名'.repeat(6)
+	const volumes = Array.from({ length: 8 }, (_, index) => ({
+		id: `${index}`.repeat(64),
+		name: `連作 ${index + 1}.epub`,
+		format: 'epub',
+		size: 10,
+		series: seriesName,
+	}))
+	await mockLibrary(page, volumes)
+	await page.setViewportSize({ width: 390, height: 844 })
+	await page.goto('/bookshelf')
+	const row = page.getByRole('list', { name: `${seriesName}の本` })
+	await expect(row.getByRole('link')).toHaveCount(8)
+	const first = await row.getByRole('link').first().boundingBox()
+	const last = await row.getByRole('link').last().boundingBox()
+	expect(first).not.toBeNull()
+	expect(last).not.toBeNull()
+	expect(last!.y).toBeCloseTo(first!.y, 0)
+	const overflows = await row.evaluate(
+		(track) => track.scrollWidth > track.clientWidth,
+	)
+	expect(overflows).toBe(true)
+	const dimensions = await page.evaluate(() => ({
+		client: document.documentElement.clientWidth,
+		scroll: document.documentElement.scrollWidth,
+	}))
+	expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client)
+	const previous = page.getByRole('button', { name: `${seriesName}を前へ` })
+	const next = page.getByRole('button', { name: `${seriesName}を次へ` })
+	await expect(previous).toBeDisabled()
+	await next.click()
+	await expect(previous).toBeEnabled()
+	await previous.click()
+	await expect(previous).toBeDisabled()
+	await expect(
+		page.getByRole('heading', { name: seriesName }).getByRole('link'),
+	).toBeVisible()
+})
+
+test('series detail keeps exact names, volumes and reader return through direct URLs', async ({
+	page,
+}) => {
+	const archive = await makeZip()
+	const seriesName = 'A/B #?% 星'
+	const shelf = [
+		{
+			id: '1'.repeat(64),
+			name: '巻10.zip',
+			format: 'zip',
+			size: archive.length,
+			series: seriesName,
+		},
+		{
+			id: '2'.repeat(64),
+			name: '巻2.zip',
+			format: 'zip',
+			size: archive.length,
+			series: seriesName,
+		},
+		{
+			id: '3'.repeat(64),
+			name: '別作品.zip',
+			format: 'zip',
+			size: archive.length,
+			series: '月の森',
+		},
+	]
+	const requests = await mockLibrary(page, shelf, archive)
+	await page.goto('/bookshelf')
+	await page.getByRole('button', { name: '検索', exact: true }).click()
+	await page.getByLabel('タイトル・シリーズで検索').fill('巻2')
+	const all = page.getByRole('region', { name: 'すべての本' })
+	await expect(coverLinks(all)).toHaveCount(1)
+	await coverLinks(all).click()
+
+	await expect(page).toHaveURL(/\/bookshelf\/series\?name=/)
+	const detailUrl = page.url()
+	const parsed = new URL(detailUrl)
+	expect(parsed.pathname).toBe('/bookshelf/series')
+	expect(parsed.searchParams.get('name')).toBe(seriesName)
+	await expect(
+		page.getByRole('heading', { level: 1, name: seriesName, exact: true }),
+	).toBeVisible()
+	const list = page.getByRole('list', { name: `${seriesName}の収録本` })
+	await expect(list.getByRole('button')).toHaveCount(2)
+	await expect(list.getByRole('button').nth(0)).toHaveAccessibleName(/巻2/)
+	await expect(list.getByRole('button').nth(1)).toHaveAccessibleName(/巻10/)
+	await expect.poll(() => requests.books).toBe(0)
+
+	await list.getByRole('button', { name: /巻2/ }).click()
+	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
+	await expect(
+		page.getByRole('heading', { level: 1, name: seriesName }),
+	).toBeHidden()
+	await expect.poll(() => requests.books).toBe(1)
+	await page.getByRole('button', { name: '設定' }).click()
+	await expect(page.getByRole('heading', { name: '設定' })).toBeVisible()
+	await page.getByRole('button', { name: '読書に戻る' }).click()
+	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
+	await page.getByRole('button', { name: '本を閉じる' }).click()
+	await expect(page).toHaveURL(detailUrl)
+
+	await page.goto(detailUrl)
+	await expect(
+		page.getByRole('heading', { level: 1, name: seriesName, exact: true }),
+	).toBeVisible()
+	await expect(
+		page
+			.getByRole('list', { name: `${seriesName}の収録本` })
+			.getByRole('button'),
+	).toHaveCount(2)
+	await page.getByRole('link', { name: '本棚に戻る' }).click()
+	await expect(page).toHaveURL('/bookshelf')
+	await expect(page.getByRole('heading', { name: '本棚' })).toBeVisible()
+
+	await page.goto('/bookshelf/series?name=' + encodeURIComponent('存在しない'))
+	await expect(
+		page.getByText('このシリーズの本は見つかりません。'),
+	).toBeVisible()
+	await expect(page.getByRole('link', { name: '本棚に戻る' })).toHaveAttribute(
+		'href',
+		'/bookshelf',
+	)
 })
 
 test('limits recent-reading shelf to eight books in recency order', async ({
@@ -352,78 +523,27 @@ test('hides the recently-read shelf when the position lookup fails', async ({
 	).toBeVisible()
 })
 
-test('bookshelf opens a ZIP in the reader and closes through settings back to shelf', async ({
+test('recently uploaded covers open the reader directly and close back to the shelf', async ({
 	page,
 }) => {
 	const archive = await makeZip()
-	let bookRequests = 0
-	await page.route('**/api/books**', async (route) => {
-		const url = new URL(route.request().url())
-		if (url.pathname === '/api/books') {
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({
-					books: [
-						{
-							...books[2],
-							size: archive.length,
-						},
-					],
-				}),
-			})
-		} else if (url.pathname.endsWith('/cover')) {
-			await route.fulfill({ status: 404, body: 'Not found' })
-		} else {
-			bookRequests += 1
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/zip',
-				body: archive,
-			})
-		}
-	})
+	const requests = await mockLibrary(
+		page,
+		[{ ...books[2], size: archive.length }],
+		archive,
+	)
 	await page.goto('/bookshelf')
-	const all = page.getByRole('region', { name: 'すべての本' })
-	await expect(all.getByRole('button', { name: /別作品/ })).toBeVisible()
-	const shelfFooter = page.getByRole('contentinfo', {
+	const recent = page.getByRole('region', { name: '最近アップロードされた本' })
+	const footer = page.getByRole('contentinfo', {
 		name: '本棚の絞り込みと表示設定',
 	})
-	await page.getByRole('button', { name: '検索', exact: true }).click()
-	await page.getByLabel('タイトル・シリーズで検索').fill('月の森')
-	await expect(all.getByRole('button', { name: /別作品/ })).toBeVisible()
-	await expect.poll(() => bookRequests).toBe(0)
-	await all.getByRole('button', { name: /別作品/ }).click()
+	await recent.getByRole('button', { name: /別作品/ }).click()
 	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
-	await expect(shelfFooter).toBeHidden()
+	await expect(footer).toBeHidden()
 	await expect(page.getByRole('region', { name: 'すべての本' })).toHaveCount(0)
-	await expect.poll(() => bookRequests).toBe(1)
-	await page.getByRole('button', { name: '本を閉じる' }).click()
-	await expect(page).toHaveURL('/bookshelf')
-	await expect(page.getByLabel('タイトル・シリーズで検索')).toHaveValue(
-		'月の森',
-	)
-	await expect(
-		page
-			.getByRole('region', { name: 'すべての本' })
-			.getByRole('button', { name: /別作品/ }),
-	).toBeVisible()
-
-	await page
-		.getByRole('button', { name: /別作品/ })
-		.last()
-		.click()
-	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
-	await page.getByRole('button', { name: '設定' }).click()
-	await expect(page.getByRole('heading', { name: '設定' })).toBeVisible()
-	await page.getByRole('button', { name: '読書に戻る' }).click()
-	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
-	await expect.poll(() => bookRequests).toBe(2)
+	await expect.poll(() => requests.books).toBe(1)
 	await page.getByRole('button', { name: '本を閉じる' }).click()
 	await expect(page).toHaveURL('/bookshelf')
 	await expect(page.getByRole('heading', { name: '本棚' })).toBeVisible()
-	await expect(shelfFooter).toBeVisible()
-	await expect(
-		page.getByRole('button', { name: '検索', exact: true }),
-	).toBeVisible()
+	await expect(footer).toBeVisible()
 })

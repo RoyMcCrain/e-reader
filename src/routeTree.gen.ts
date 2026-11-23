@@ -14,6 +14,7 @@ import { Route as BookshelfRouteImport } from './routes/bookshelf'
 import { Route as ConfigRouteImport } from './routes/config'
 import { Route as ApiBooksRouteImport } from './routes/api.books'
 import { Route as ApiReadingPositionsRouteImport } from './routes/api.reading-positions'
+import { Route as BookshelfSeriesRouteImport } from './routes/bookshelf_.series'
 import { Route as ApiBooksIdRouteImport } from './routes/api.books.$id'
 import { Route as ApiReadingPositionsIdRouteImport } from './routes/api.reading-positions.$id'
 import { Route as ApiBooksIdCoverRouteImport } from './routes/api.books.$id.cover'
@@ -43,6 +44,11 @@ const ApiReadingPositionsRoute = ApiReadingPositionsRouteImport.update({
   path: '/api/reading-positions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BookshelfSeriesRoute = BookshelfSeriesRouteImport.update({
+  id: '/bookshelf_/series',
+  path: '/bookshelf/series',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBooksIdRoute = ApiBooksIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/config': typeof ConfigRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/reading-positions': typeof ApiReadingPositionsRouteWithChildren
+  '/bookshelf/series': typeof BookshelfSeriesRoute
   '/api/books/$id': typeof ApiBooksIdRouteWithChildren
   '/api/reading-positions/$id': typeof ApiReadingPositionsIdRoute
   '/api/books/$id/cover': typeof ApiBooksIdCoverRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/config': typeof ConfigRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/reading-positions': typeof ApiReadingPositionsRouteWithChildren
+  '/bookshelf/series': typeof BookshelfSeriesRoute
   '/api/books/$id': typeof ApiBooksIdRouteWithChildren
   '/api/reading-positions/$id': typeof ApiReadingPositionsIdRoute
   '/api/books/$id/cover': typeof ApiBooksIdCoverRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/config': typeof ConfigRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/reading-positions': typeof ApiReadingPositionsRouteWithChildren
+  '/bookshelf_/series': typeof BookshelfSeriesRoute
   '/api/books/$id': typeof ApiBooksIdRouteWithChildren
   '/api/reading-positions/$id': typeof ApiReadingPositionsIdRoute
   '/api/books/$id/cover': typeof ApiBooksIdCoverRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/api/books'
     | '/api/reading-positions'
+    | '/bookshelf/series'
     | '/api/books/$id'
     | '/api/reading-positions/$id'
     | '/api/books/$id/cover'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/api/books'
     | '/api/reading-positions'
+    | '/bookshelf/series'
     | '/api/books/$id'
     | '/api/reading-positions/$id'
     | '/api/books/$id/cover'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/api/books'
     | '/api/reading-positions'
+    | '/bookshelf_/series'
     | '/api/books/$id'
     | '/api/reading-positions/$id'
     | '/api/books/$id/cover'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   ConfigRoute: typeof ConfigRoute
   ApiBooksRoute: typeof ApiBooksRouteWithChildren
   ApiReadingPositionsRoute: typeof ApiReadingPositionsRouteWithChildren
+  BookshelfSeriesRoute: typeof BookshelfSeriesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -166,6 +179,13 @@ declare module '@tanstack/react-router' {
       path: '/api/reading-positions'
       fullPath: '/api/reading-positions'
       preLoaderRoute: typeof ApiReadingPositionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bookshelf_/series': {
+      id: '/bookshelf_/series'
+      path: '/bookshelf/series'
+      fullPath: '/bookshelf/series'
+      preLoaderRoute: typeof BookshelfSeriesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/books/$id': {
@@ -233,6 +253,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConfigRoute: ConfigRoute,
   ApiBooksRoute: ApiBooksRouteWithChildren,
   ApiReadingPositionsRoute: ApiReadingPositionsRouteWithChildren,
+  BookshelfSeriesRoute: BookshelfSeriesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

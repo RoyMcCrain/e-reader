@@ -13,6 +13,7 @@ import {
 	useReaderApp,
 } from '#components/providers/ReaderProvider'
 import { Reader } from '#components/reader/Reader'
+import { parseSeriesName } from '#lib/library/metadata'
 
 import shellStyles from '#routes/__root.module.css'
 import '#routes/styles.css'
@@ -20,8 +21,12 @@ import '#routes/styles.css'
 const AppShell = () => {
 	const { file, setFile, settings } = useReaderApp()
 	const navigate = useNavigate()
-	const location = useLocation()
-	const active = location.pathname !== '/config'
+	const { pathname, search } = useLocation()
+	const active = pathname !== '/config'
+	const from =
+		pathname === '/bookshelf' || pathname === '/bookshelf/series'
+			? pathname
+			: undefined
 	return (
 		<>
 			{file && (
@@ -36,19 +41,16 @@ const AppShell = () => {
 						active={active}
 						onClose={() => {
 							setFile(undefined)
-							if (
-								location.pathname !== '/' &&
-								location.pathname !== '/bookshelf'
-							)
-								void navigate({ to: '/' })
+							if (pathname !== '/' && !from) void navigate({ to: '/' })
 						}}
 						onSettings={() =>
 							void navigate({
 								to: '/config',
 								search: {
-									from:
-										location.pathname === '/bookshelf'
-											? '/bookshelf'
+									from,
+									name:
+										from === '/bookshelf/series'
+											? parseSeriesName(search.name)
 											: undefined,
 								},
 							})
@@ -56,7 +58,7 @@ const AppShell = () => {
 					/>
 				</div>
 			)}
-			<div hidden={Boolean(file && location.pathname === '/bookshelf')}>
+			<div hidden={Boolean(file && from)}>
 				<Outlet />
 			</div>
 		</>

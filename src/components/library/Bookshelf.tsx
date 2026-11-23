@@ -78,19 +78,10 @@ interface BookActions {
 	openBook: (book: CloudBook) => void
 }
 
-const BookshelfBook = ({
-	book,
-	busyId,
-	openBook,
-}: BookActions & { book: CloudBook }) => {
+const BookCover = ({ book }: { book: CloudBook }) => {
 	const [coverLoaded, setCoverLoaded] = useState(false)
 	return (
-		<button
-			className={styles.book}
-			aria-label={`${book.name}、${book.format.toUpperCase()}`}
-			disabled={Boolean(busyId)}
-			onClick={() => openBook(book)}
-		>
+		<>
 			<span
 				className={styles.cover}
 				style={{
@@ -113,19 +104,34 @@ const BookshelfBook = ({
 				<span className={styles.badge}>{book.format.toUpperCase()}</span>
 			</span>
 			<span className={styles.cardTitle}>{book.name}</span>
-		</button>
+		</>
 	)
 }
 
-const BookGrid = ({
-	books,
-	...actions
-}: BookActions & { books: CloudBook[] }) => (
-	<div className={styles.grid}>
-		{books.map((book) => (
-			<BookshelfBook key={book.id} book={book} {...actions} />
-		))}
-	</div>
+export const BookshelfBook = ({
+	book,
+	busyId,
+	openBook,
+}: BookActions & { book: CloudBook }) => (
+	<button
+		className={styles.book}
+		aria-label={`${book.name}、${book.format.toUpperCase()}`}
+		disabled={Boolean(busyId)}
+		onClick={() => openBook(book)}
+	>
+		<BookCover book={book} />
+	</button>
+)
+
+const SeriesBook = ({ book }: { book: CloudBook }) => (
+	<Link
+		className={styles.book}
+		to="/bookshelf/series"
+		search={{ name: book.series }}
+		aria-label={`${book.name}、${book.format.toUpperCase()}`}
+	>
+		<BookCover book={book} />
+	</Link>
 )
 
 interface FilterControlsProps {
@@ -247,34 +253,110 @@ const RecentBooks = ({
 	)
 }
 
-interface AllBooksProps extends BookActions {
+interface AllBooksProps {
 	books: CloudBook[]
 	filtered: CloudBook[]
 	sort: BookSort
 }
 
-const AllBooksContent = ({
+const SeriesCarousel = ({
+	name,
 	books,
-	filtered,
-	sort,
-	...actions
-}: AllBooksProps) => {
+}: {
+	name: string
+	books: CloudBook[]
+}) => {
+	const track = useRef<HTMLUListElement>(null)
+	const [scrollState, setScrollState] = useState('none')
+	useEffect(() => {
+		const element = track.current
+		const carousel = element?.parentElement
+		if (!element || !carousel) return
+		const update = () => {
+			if (element.scrollWidth <= carousel.clientWidth)
+				return setScrollState('none')
+			if (element.scrollLeft <= 1) return setScrollState('start')
+			if (element.scrollLeft >= element.scrollWidth - element.clientWidth - 1)
+				return setScrollState('end')
+			setScrollState('middle')
+		}
+		update()
+		element.addEventListener('scroll', update)
+		let frame = 0
+		const observer = new ResizeObserver(() => {
+			cancelAnimationFrame(frame)
+			frame = requestAnimationFrame(update)
+		})
+		observer.observe(element)
+		return () => {
+			element.removeEventListener('scroll', update)
+			observer.disconnect()
+			cancelAnimationFrame(frame)
+		}
+	}, [books])
+	const scroll = (direction: number) =>
+		track.current?.scrollBy({
+			left: direction * track.current.clientWidth * 0.8,
+		})
+	return (
+		<div className={styles.carousel}>
+			{scrollState !== 'none' && (
+				<button
+					aria-label={`${name}を前へ`}
+					disabled={scrollState === 'start'}
+					onClick={() => scroll(-1)}
+				>
+					‹
+				</button>
+			)}
+			<ul ref={track} aria-label={`${name}の本`}>
+				{books.map((book) => (
+					<li key={book.id}>
+						<SeriesBook book={book} />
+					</li>
+				))}
+			</ul>
+			{scrollState !== 'none' && (
+				<button
+					aria-label={`${name}を次へ`}
+					disabled={scrollState === 'end'}
+					onClick={() => scroll(1)}
+				>
+					›
+				</button>
+			)}
+		</div>
+	)
+}
+
+const AllBooksContent = ({ books, filtered, sort }: AllBooksProps) => {
 	if (books.length === 0) return <p>クラウドに本はありません。</p>
 	if (filtered.length === 0) return <p>条件に合う本はありません。</p>
 
-	const ordered = sortBooks(filtered, sort)
-	if (sort !== 'series') return <BookGrid books={ordered} {...actions} />
+	if (sort !== 'series')
+		return (
+			<div className={styles.grid}>
+				{sortBooks(filtered, sort).map((book) => (
+					<SeriesBook key={book.id} book={book} />
+				))}
+			</div>
+		)
 
-	return groupBooks(ordered).map((group) => (
+	return groupBooks(filtered).map((group) => (
 		<section
 			className={styles.group}
 			key={group.series === undefined ? 'unassigned' : `series:${group.series}`}
 		>
 			<h3>
-				{group.series ?? 'シリーズ未設定'}{' '}
+				<Link to="/bookshelf/series" search={{ name: group.series }}>
+					{group.series ?? 'シリーズ未設定'}
+				</Link>{' '}
 				<small>{group.books.length} 冊</small>
 			</h3>
-			<BookGrid books={group.books} {...actions} />
+			<SeriesCarousel
+				name={group.series ?? 'シリーズ未設定'}
+				books={group.books}
+			/>
 		</section>
 	))
 }
@@ -352,13 +434,7 @@ const BookshelfResults = ({
 							openBook={openBook}
 						/>
 					)}
-					<AllBooks
-						books={books}
-						filtered={filtered}
-						sort={sort}
-						busyId={busyId}
-						openBook={openBook}
-					/>
+					<AllBooks books={books} filtered={filtered} sort={sort} />
 					<RecentBooks books={filtered} busyId={busyId} openBook={openBook} />
 				</div>
 				{busyId && <output>本をダウンロードしています…</output>}
@@ -391,7 +467,7 @@ const BookshelfHeader = ({ ready, query, setQuery }: BookshelfHeaderProps) => {
 				</a>
 				<nav aria-label="メインナビゲーション">
 					<a href="/">ファイルから読む</a>
-					<Link to="/config" search={{ from: '/bookshelf' }}>
+					<Link to="/config" search={{ from: '/bookshelf', name: undefined }}>
 						設定
 					</Link>
 					{ready && (
