@@ -5,7 +5,7 @@ import type { RefObject } from 'react'
 import { Bookshelf, BookshelfBook } from '#components/library/Bookshelf'
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { sortBooks } from '#lib/library/bookshelf'
-import { validBookMetadata } from '#lib/library/metadata'
+import { parseAuthorName, validBookMetadata } from '#lib/library/metadata'
 import type { CloudBook } from '#lib/library/types'
 
 import styles from '#components/library/Library.module.css'
@@ -235,6 +235,16 @@ const SeriesBookList = ({
 	)
 }
 
+// Authors are de-duplicated in first-seen order across the series volumes.
+const authorLabel = (books: CloudBook[]) =>
+	[
+		...new Set(
+			books
+				.map((book) => parseAuthorName(book.author))
+				.filter((author) => author !== undefined),
+		),
+	].join('、')
+
 const SeriesDetails = (props: SeriesDetailsProps) => {
 	const {
 		books,
@@ -248,10 +258,12 @@ const SeriesDetails = (props: SeriesDetailsProps) => {
 
 	const title = seriesName ?? 'シリーズ未設定'
 	const selected = books.filter((book) => book.series === seriesName)
+	const authors = seriesName === undefined ? '' : authorLabel(selected)
 	return (
 		<main className={`${styles.library} ${styles.series}`}>
 			<Link to="/bookshelf">本棚に戻る</Link>
 			<h1>{title}</h1>
+			{authors && <p>著者: {authors}</p>}
 			{!loading && !listError && <p>{selected.length} 冊</p>}
 			<LibraryState
 				loading={loading}

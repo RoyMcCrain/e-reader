@@ -354,6 +354,7 @@ test('series detail keeps exact names, volumes and reader return through direct 
 			format: 'zip',
 			size: archive.length,
 			series: seriesName,
+			author: '星野 文',
 		},
 		{
 			id: '2'.repeat(64),
@@ -361,6 +362,7 @@ test('series detail keeps exact names, volumes and reader return through direct 
 			format: 'zip',
 			size: archive.length,
 			series: seriesName,
+			author: '星野 文',
 		},
 		{
 			id: '3'.repeat(64),
@@ -368,6 +370,7 @@ test('series detail keeps exact names, volumes and reader return through direct 
 			format: 'zip',
 			size: archive.length,
 			series: '月の森',
+			author: '別の著者',
 		},
 	]
 	const requests = await mockLibrary(page, shelf, archive)
@@ -386,6 +389,8 @@ test('series detail keeps exact names, volumes and reader return through direct 
 	await expect(
 		page.getByRole('heading', { level: 1, name: seriesName, exact: true }),
 	).toBeVisible()
+	await expect(page.getByText('著者: 星野 文', { exact: true })).toBeVisible()
+	await expect(page.getByText('別の著者')).toHaveCount(0)
 	const list = page.getByRole('list', { name: `${seriesName}の収録本` })
 	await expect(list.getByRole('button')).toHaveCount(2)
 	await expect(list.getByRole('button').nth(0)).toHaveAccessibleName(/巻2/)

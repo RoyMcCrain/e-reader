@@ -1,4 +1,4 @@
-import { validBookMetadata } from '#lib/library/metadata.ts'
+import { parseAuthorName, validBookMetadata } from '#lib/library/metadata.ts'
 import type { LibraryResponse, CloudBook } from '#lib/library/types'
 import { checkAccess, type AccessEnv } from '#server/access.ts'
 import { extractCover, type CoverImage } from '#server/cover.ts'
@@ -57,7 +57,9 @@ const validName = (book: Record<string, unknown>) =>
 const validSize = (size: unknown) =>
 	typeof size === 'number' && Number.isSafeInteger(size) && size > 0
 
-const validBook = (value: unknown): value is CloudBook => {
+type ManifestBook = Omit<CloudBook, 'author'> & { author?: unknown }
+
+const validBook = (value: unknown): value is ManifestBook => {
 	if (!value || typeof value !== 'object') return false
 	const book = value as Record<string, unknown>
 	return (
@@ -74,12 +76,21 @@ const parseManifest = (text: string): LibraryResponse | null => {
 	const books = (manifest as { books?: unknown }).books
 	if (!Array.isArray(books) || books.length > 10_000 || !books.every(validBook))
 		return null
-	const ids = books.map((book) => (book as CloudBook).id)
+	const ids = books.map((book) => book.id)
 	return new Set(ids).size === books.length
 		? {
 				books: books.map((book) => {
-					const { id, name, format, size, series, uploadedAt, hasCover } =
-						book as CloudBook
+					const {
+						id,
+						name,
+						format,
+						size,
+						series,
+						uploadedAt,
+						hasCover,
+						author,
+					} = book
+					const authorName = parseAuthorName(author)
 					return {
 						id,
 						name,
@@ -88,6 +99,7 @@ const parseManifest = (text: string): LibraryResponse | null => {
 						...(series === undefined ? {} : { series: series.trim() }),
 						...(uploadedAt === undefined ? {} : { uploadedAt }),
 						...(hasCover === undefined ? {} : { hasCover }),
+						...(authorName === undefined ? {} : { author: authorName }),
 					}
 				}),
 			}

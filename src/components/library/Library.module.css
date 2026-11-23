@@ -9,7 +9,8 @@
 .series {
 	max-width: 1240px;
 }
-.series h1 {
+.series h1,
+.series p {
 	overflow-wrap: anywhere;
 }
 .series .books {

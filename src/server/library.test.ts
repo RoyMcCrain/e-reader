@@ -84,6 +84,7 @@ describe('handleLibrary', () => {
 			series: '  星の旅  ',
 			uploadedAt: '2025-03-04T05:06:07.08Z',
 			hasCover: true,
+			author: '  星野 文  ',
 			secret: 'omit',
 		}
 		const secondBook = {
@@ -94,7 +95,7 @@ describe('handleLibrary', () => {
 		}
 		const fixture = bucketFor({
 			'library.json': JSON.stringify({
-				books: [metadataBook, secondBook],
+				books: [metadataBook, { ...secondBook, author: 42 }],
 			}),
 		})
 		const listed = await handleLibrary(
@@ -110,6 +111,7 @@ describe('handleLibrary', () => {
 					series: '星の旅',
 					uploadedAt: '2025-03-04T05:06:07.08Z',
 					hasCover: true,
+					author: '星野 文',
 				},
 				secondBook,
 			],
