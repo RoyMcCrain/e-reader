@@ -70,7 +70,7 @@ test('EPUB keeps publisher layout and illustration while blocking active content
 			}),
 		)
 	})
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	localOrigin = new URL(page.url()).origin
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({

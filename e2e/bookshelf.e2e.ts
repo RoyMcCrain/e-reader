@@ -143,21 +143,20 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	await expect(searchToggle).toHaveAttribute('aria-expanded', 'true')
 	await expect(searchInput).toBeVisible()
 	await expect(searchInput).toBeFocused()
+	await expect(page.getByRole('region', { name: '最近読んだ本' })).toHaveCount(
+		0,
+	)
+	await expect(page.getByRole('link', { name: '履歴' })).toHaveAttribute(
+		'href',
+		'/history',
+	)
 	const all = page.getByRole('region', { name: 'すべての本' })
-	const read = page.getByRole('region', { name: '最近読んだ本' })
-	const readBooks = read.getByRole('button')
-	await expect(readBooks).toHaveCount(2)
-	await expect(readBooks.nth(0)).toHaveAccessibleName(/別作品/)
-	await expect(readBooks.nth(1)).toHaveAccessibleName(/巻2/)
-	const readBox = await read.boundingBox()
 	const allBox = await all.boundingBox()
 	const uploadBox = await page
 		.getByRole('region', { name: '最近アップロードされた本' })
 		.boundingBox()
-	expect(readBox).not.toBeNull()
 	expect(allBox).not.toBeNull()
 	expect(uploadBox).not.toBeNull()
-	expect(readBox!.y).toBeLessThan(allBox!.y)
 	expect(allBox!.y).toBeLessThan(uploadBox!.y)
 	const seriesHeading = all.getByRole('heading', { name: /星の旅/ })
 	await expect(
@@ -433,7 +432,7 @@ test('series detail keeps exact names, volumes and reader return through direct 
 	)
 })
 
-test('limits recent-reading shelf to eight books in recency order', async ({
+test('bookshelf omits the recently-read shelf and links to the history page', async ({
 	page,
 }) => {
 	const recentBooks = Array.from({ length: 10 }, (_, index) => ({
@@ -465,40 +464,20 @@ test('limits recent-reading shelf to eight books in recency order', async ({
 		route.fulfill({ status: 404, body: 'Not found' }),
 	)
 	await page.goto('/bookshelf')
-	const cards = page
-		.getByRole('region', { name: '最近読んだ本' })
-		.getByRole('button')
-	await expect(cards).toHaveCount(8)
-	await expect(cards.first()).toHaveAccessibleName(/既読 9/)
-	await expect(cards.last()).toHaveAccessibleName(/既読 2/)
-})
-
-test('shows an empty recent-reading shelf after a successful position lookup', async ({
-	page,
-}) => {
-	await page.route('**/api/books', (route) =>
-		route.fulfill({
-			status: 200,
-			contentType: 'application/json',
-			body: JSON.stringify({ books: [] }),
-		}),
+	await expect(page.getByRole('region', { name: '最近読んだ本' })).toHaveCount(
+		0,
 	)
-	await page.route('**/api/reading-positions', (route) =>
-		route.fulfill({
-			status: 200,
-			contentType: 'application/json',
-			body: JSON.stringify({ positions: [] }),
-		}),
+	await expect(page.getByRole('link', { name: '履歴' })).toHaveAttribute(
+		'href',
+		'/history',
 	)
-	await page.goto('/bookshelf')
+	const all = page.getByRole('region', { name: 'すべての本' })
 	await expect(
-		page.getByRole('region', { name: '最近読んだ本' }),
-	).toContainText('まだ読んだ本がありません。')
+		all.getByRole('list', { name: 'シリーズ未設定の本' }).getByRole('link'),
+	).toHaveCount(10)
 })
 
-test('hides the recently-read shelf when the position lookup fails', async ({
-	page,
-}) => {
+test('bookshelf renders when the position lookup fails', async ({ page }) => {
 	const shelfBook = {
 		id: 'e'.repeat(64),
 		name: '棚の本.epub',

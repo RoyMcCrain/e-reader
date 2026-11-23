@@ -39,6 +39,8 @@ test('config overlays a live book and disables its keyboard input', async ({
 	await page.getByRole('combobox', { name: '見開き' }).selectOption('single')
 	await page.getByRole('button', { name: '戻る' }).click()
 	await page.waitForLoadState('networkidle')
+	await page.goto('/bookshelf')
+	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'comic.zip',
 		mimeType: 'application/zip',

@@ -55,19 +55,84 @@ export const filterBooks = (books: CloudBook[], filters: BookFilters) => {
 export const sortBooks = (books: CloudBook[], sort: BookSort) =>
 	[...books].sort(comparators[sort])
 
-export const selectRecentBooks = (
+export interface HistorySeriesEntry {
+	kind: 'series'
+	series: string
+	books: CloudBook[]
+	readAt: number
+	representative: CloudBook
+}
+
+export interface HistoryBookEntry {
+	kind: 'book'
+	book: CloudBook
+	readAt: number
+}
+
+export type HistoryEntry = HistorySeriesEntry | HistoryBookEntry
+
+const entryName = (entry: HistoryEntry) =>
+	entry.kind === 'series' ? entry.series : entry.book.name
+
+const entryId = (entry: HistoryEntry) =>
+	entry.kind === 'series' ? entry.representative.id : entry.book.id
+
+const readAtOf = (book: CloudBook, recency: Record<string, number>) => {
+	const readAt = recency[book.id]
+	return typeof readAt === 'number' && readAt > 0 ? readAt : undefined
+}
+
+export const selectHistoryEntries = (
 	books: CloudBook[],
 	recency: Record<string, number>,
-	limit: number,
-) =>
-	books
-		.filter((book) => recency[book.id] > 0)
-		.sort(
-			(left, right) =>
-				recency[right.id]! - recency[left.id]! ||
-				left.id.localeCompare(right.id),
-		)
-		.slice(0, limit)
+): HistoryEntry[] => {
+	const entries: HistoryEntry[] = []
+	for (const group of groupBooks(books)) {
+		if (group.series === undefined) {
+			for (const book of group.books) {
+				const readAt = readAtOf(book, recency)
+				if (readAt !== undefined) entries.push({ kind: 'book', book, readAt })
+			}
+			continue
+		}
+		let latest: CloudBook | undefined
+		let readAt = 0
+		for (const book of group.books) {
+			const at = readAtOf(book, recency)
+			if (at === undefined) continue
+			if (at > readAt || (at === readAt && book.id < latest!.id)) {
+				readAt = at
+				latest = book
+			}
+		}
+		if (latest !== undefined)
+			entries.push({
+				kind: 'series',
+				series: group.series,
+				books: group.books,
+				readAt,
+				representative: latest,
+			})
+	}
+	return entries.sort(
+		(left, right) =>
+			right.readAt - left.readAt ||
+			titleCollator.compare(entryName(left), entryName(right)) ||
+			entryId(left).localeCompare(entryId(right)),
+	)
+}
+
+const readAtFormatter = new Intl.DateTimeFormat('ja-JP', {
+	dateStyle: 'medium',
+	timeStyle: 'short',
+})
+
+export const formatReadAt = (readAt: number) => {
+	if (!Number.isSafeInteger(readAt) || readAt <= 0) return ''
+	const date = new Date(readAt)
+	if (!Number.isFinite(date.getTime())) return ''
+	return readAtFormatter.format(date)
+}
 
 export const groupBooks = (books: CloudBook[]) => {
 	const groups = new Map<string | undefined, CloudBook[]>()

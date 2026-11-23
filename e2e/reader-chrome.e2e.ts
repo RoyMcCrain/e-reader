@@ -56,7 +56,7 @@ const makeZip = async () => {
 }
 
 const openEpub = async (page: import('@playwright/test').Page) => {
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'synthetic.epub',
@@ -82,6 +82,7 @@ const epubContent = (page: import('@playwright/test').Page) =>
 
 const opacity = (page: import('@playwright/test').Page, selector: string) =>
 	page
+		.getByRole('region', { name: '読書画面' })
 		.locator(selector)
 		.evaluate((element) => getComputedStyle(element).opacity)
 
@@ -104,8 +105,12 @@ test('EPUB chrome fades without moving the stage and document pointer activity r
 	page,
 }) => {
 	await openEpub(page)
-	const header = page.locator('header')
-	const footer = page.locator('footer')
+	const header = page.locator('header', {
+		has: page.getByRole('button', { name: '本を閉じる' }),
+	})
+	const footer = page.locator('footer', {
+		has: page.getByRole('progressbar', { name: '読書の進捗' }),
+	})
 	const stage = page.getByRole('main', { name: '読書ページ' })
 	const bounds = await stage.boundingBox()
 	expect(bounds).toEqual({ x: 0, y: 0, ...page.viewportSize() })
@@ -143,7 +148,9 @@ test('TOC focus pins chrome; settings return clears the pin and idle hiding resu
 	page,
 }) => {
 	await openEpub(page)
-	const header = page.locator('header')
+	const header = page.locator('header', {
+		has: page.getByRole('button', { name: '本を閉じる' }),
+	})
 	const trigger = page.getByRole('button', { name: '目次', exact: true })
 	await trigger.click()
 	const dialog = page.getByRole('dialog', { name: '目次', exact: true })
@@ -151,7 +158,11 @@ test('TOC focus pins chrome; settings return clears the pin and idle hiding resu
 	await dialog.evaluate((element) => element.focus())
 	await page.waitForTimeout(2400)
 	await expect(header).toHaveCSS('opacity', '1')
-	await expect(page.locator('footer')).toHaveCSS('opacity', '1')
+	await expect(
+		page.locator('footer', {
+			has: page.getByRole('progressbar', { name: '読書の進捗' }),
+		}),
+	).toHaveCSS('opacity', '1')
 	await expect(dialog).toBeVisible()
 	await page.keyboard.press('Escape')
 	await expect(dialog).not.toBeVisible()
@@ -170,19 +181,29 @@ test('EPUB document keyboard activity reveals chrome after chapter replacement',
 	await page.setViewportSize({ width: 600, height: 800 })
 	await openEpub(page)
 	const stage = page.getByRole('main', { name: '読書ページ' })
-	const header = page.locator('header')
+	const header = page.locator('header', {
+		has: page.getByRole('button', { name: '本を閉じる' }),
+	})
 	await stage.click({ position: { x: 300, y: 400 } })
 	await waitForHiddenChrome(page)
 	await page.keyboard.press('Shift')
 	await expect(header).toHaveCSS('opacity', '1')
-	await expect(page.locator('footer')).toHaveCSS('opacity', '1')
+	await expect(
+		page.locator('footer', {
+			has: page.getByRole('progressbar', { name: '読書の進捗' }),
+		}),
+	).toHaveCSS('opacity', '1')
 
 	await page.keyboard.press('PageDown')
 	await expectChromeHiddenImmediately(page)
 	await expect.poll(() => epubContent(page)).toContain('Middle content')
 	await stage.click({ position: { x: 300, y: 400 } })
 	await expect(header).toHaveCSS('opacity', '1')
-	await expect(page.locator('footer')).toHaveCSS('opacity', '1')
+	await expect(
+		page.locator('footer', {
+			has: page.getByRole('progressbar', { name: '読書の進捗' }),
+		}),
+	).toHaveCSS('opacity', '1')
 	await page.keyboard.press('PageUp')
 	await expectChromeHiddenImmediately(page)
 	await expect.poll(() => epubContent(page)).toContain('Opening content')
@@ -205,15 +226,31 @@ test.describe('touch chrome', () => {
 		await openEpub(page)
 		await waitForHiddenChrome(page)
 		await page.touchscreen.tap(195, 422)
-		await expect(page.locator('header')).toHaveCSS('opacity', '1')
+		await expect(
+			page.locator('header', {
+				has: page.getByRole('button', { name: '本を閉じる' }),
+			}),
+		).toHaveCSS('opacity', '1')
 		await expect.poll(() => epubContent(page)).toContain('Opening content')
-		await expect(page.locator('footer')).toHaveCSS('opacity', '1')
+		await expect(
+			page.locator('footer', {
+				has: page.getByRole('progressbar', { name: '読書の進捗' }),
+			}),
+		).toHaveCSS('opacity', '1')
 		await page.touchscreen.tap(380, 422)
 		await expectChromeHiddenImmediately(page)
 		await expect.poll(() => epubContent(page)).toContain('Middle content')
 		await page.touchscreen.tap(195, 422)
-		await expect(page.locator('header')).toHaveCSS('opacity', '1')
-		await expect(page.locator('footer')).toHaveCSS('opacity', '1')
+		await expect(
+			page.locator('header', {
+				has: page.getByRole('button', { name: '本を閉じる' }),
+			}),
+		).toHaveCSS('opacity', '1')
+		await expect(
+			page.locator('footer', {
+				has: page.getByRole('progressbar', { name: '読書の進捗' }),
+			}),
+		).toHaveCSS('opacity', '1')
 		const cdp = await page.context().newCDPSession(page)
 		await cdp.send('Input.dispatchTouchEvent', {
 			type: 'touchStart',
@@ -230,7 +267,11 @@ test.describe('touch chrome', () => {
 		await expectChromeHiddenImmediately(page)
 		await expect.poll(() => epubContent(page)).toContain('Ending content')
 		await page.touchscreen.tap(195, 422)
-		await expect(page.locator('header')).toHaveCSS('opacity', '1')
+		await expect(
+			page.locator('header', {
+				has: page.getByRole('button', { name: '本を閉じる' }),
+			}),
+		).toHaveCSS('opacity', '1')
 		await cdp.detach()
 
 		await page.getByRole('button', { name: '本を閉じる' }).click()
@@ -240,7 +281,7 @@ test.describe('touch chrome', () => {
 				JSON.stringify({ spread: 'single', firstPageSingle: false }),
 			)
 		})
-		await page.goto('/')
+		await page.goto('/bookshelf')
 		await page.waitForLoadState('networkidle')
 		await page.locator('input[type=file]').setInputFiles({
 			name: 'synthetic.zip',
@@ -250,8 +291,16 @@ test.describe('touch chrome', () => {
 		await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
 		await waitForHiddenChrome(page)
 		await page.touchscreen.tap(195, 422)
-		await expect(page.locator('header')).toHaveCSS('opacity', '1')
-		await expect(page.locator('footer')).toHaveCSS('opacity', '1')
+		await expect(
+			page.locator('header', {
+				has: page.getByRole('button', { name: '本を閉じる' }),
+			}),
+		).toHaveCSS('opacity', '1')
+		await expect(
+			page.locator('footer', {
+				has: page.getByRole('progressbar', { name: '読書の進捗' }),
+			}),
+		).toHaveCSS('opacity', '1')
 		await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
 		await page.touchscreen.tap(380, 422)
 		await expectChromeHiddenImmediately(page)

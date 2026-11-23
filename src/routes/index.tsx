@@ -1,28 +1,65 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useRef, useState } from 'react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 
-import { useReaderApp } from '#components/providers/ReaderProvider'
+import { BookCover, SeriesBook } from '#components/library/Bookshelf'
+import { booksFromResponse } from '#components/library/Library'
+import { groupBooks, sortBooks } from '#lib/library/bookshelf'
+import type { CloudBook } from '#lib/library/types'
 
 import styles from '#routes/index.module.css'
 
-export const Route = createFileRoute('/')({ component: Home })
+type LoadError = 'auth' | 'offline' | 'unavailable' | ''
+
+const loadErrorOf = (response: Response): LoadError => {
+	if (response.status === 401 || response.status === 403) return 'auth'
+	if (response.status === 503) return 'unavailable'
+	return response.ok ? '' : 'offline'
+}
 
 function Home() {
-	const { file, setFile } = useReaderApp()
 	const navigate = useNavigate()
-	const [dragging, setDragging] = useState(false)
-	const input = useRef<HTMLInputElement>(null)
-	const [message, setMessage] = useState('')
-	const accept = (selected?: File) => {
-		if (!selected) return
-		if (!/\.(epub|zip)$/i.test(selected.name)) {
-			setMessage('EPUBまたは画像ZIPを選んでください。')
-			return
-		}
-		setMessage('')
-		setFile(selected)
-	}
-	if (file) return null
+	const [books, setBooks] = useState<CloudBook[]>([])
+	const [loading, setLoading] = useState(true)
+	const [listError, setListError] = useState<LoadError>('')
+	const [retryKey, setRetryKey] = useState(0)
+	useEffect(() => {
+		const controller = new AbortController()
+		void (async () => {
+			setLoading(true)
+			setListError('')
+			try {
+				const response = await fetch('/api/books', {
+					credentials: 'same-origin',
+					signal: controller.signal,
+				})
+				const error = loadErrorOf(response)
+				if (error) {
+					await response.body?.cancel()
+					if (!controller.signal.aborted) {
+						setListError(error)
+						setLoading(false)
+					}
+					return
+				}
+				const result: unknown = await response.json()
+				if (!controller.signal.aborted) {
+					setBooks(booksFromResponse(result))
+					setLoading(false)
+				}
+			} catch {
+				if (!controller.signal.aborted) {
+					setListError('offline')
+					setLoading(false)
+				}
+			}
+		})()
+		return () => controller.abort()
+	}, [retryKey])
+	const seriesPreview = groupBooks(books).slice(0, 10)
+	const newBooks = sortBooks(
+		books.filter((book) => book.uploadedAt),
+		'newest',
+	).slice(0, 10)
 	return (
 		<main className={styles.home}>
 			<div className={styles.brand}>
@@ -37,54 +74,96 @@ function Home() {
 					物語の中へ。
 				</h1>
 				<p>
-					<a className={styles.bookshelfLink} href="/bookshelf">
+					<Link className={styles.bookshelfLink} to="/bookshelf">
 						本棚を開く
-					</a>
+					</Link>{' '}
+					·{' '}
+					<Link className={styles.bookshelfLink} to="/history">
+						最近読んだ本
+					</Link>
 				</p>
-				<div
-					className={`${styles.drop} ${dragging ? styles.active : ''}`}
-					onDragOver={(event) => {
-						event.preventDefault()
-						setDragging(true)
-					}}
-					onDragLeave={() => setDragging(false)}
-					onDrop={(event) => {
-						event.preventDefault()
-						setDragging(false)
-						accept(event.dataTransfer.files[0])
-					}}
-				>
-					<span className={styles.icon} aria-hidden="true">
-						本
-					</span>
-					<strong>ここに本をドロップ</strong>
-					<span>または</span>
-					<button onClick={() => input.current?.click()}>ファイルを選ぶ</button>
-					<input
-						ref={input}
-						type="file"
-						accept=".epub,.zip,application/epub+zip,application/zip"
-						hidden
-						onChange={(event) => accept(event.currentTarget.files?.[0])}
-					/>
-					<small>EPUB・画像ZIPに対応</small>
-				</div>
-				{message && (
-					<p role="alert" className={styles.error}>
-						{message}
-					</p>
-				)}
-				<div className={styles.notes}>
-					<div>
-						<b>EPUB</b>
-						<span>作品の縦書き・横書き・ルビを尊重</span>
-					</div>
-					<div>
-						<b>画像ZIP</b>
-						<span>画像を自然な順序で、画面幅に合わせて表示</span>
-					</div>
-				</div>
 			</section>
+			{loading ? (
+				<p>クラウドの本を確認しています…</p>
+			) : listError === 'auth' ? (
+				<p>
+					クラウドの本を読むにはログインが必要です。{' '}
+					<a href="https://reader.rrrr.dev/">ログイン</a>
+				</p>
+			) : listError ? (
+				<div>
+					<p>
+						{listError === 'unavailable'
+							? 'クラウドの本は現在利用できません。'
+							: 'クラウドの本を確認できませんでした。'}
+					</p>
+					<button onClick={() => setRetryKey((key) => key + 1)}>再試行</button>
+				</div>
+			) : books.length === 0 ? (
+				<p>クラウドに本はありません。</p>
+			) : (
+				<>
+					<section
+						className={styles.preview}
+						aria-labelledby="top-series-heading"
+					>
+						<div className={styles.previewHead}>
+							<h2 id="top-series-heading">シリーズ</h2>
+							<span>最大10</span>
+							<Link className={styles.previewMore} to="/bookshelf">
+								すべて見る
+							</Link>
+						</div>
+						<div className={styles.previewGrid}>
+							{seriesPreview.map((group) => {
+								const representative = group.books[0]
+								if (!representative) return null
+								return (
+									<Link
+										key={
+											group.series === undefined
+												? 'unassigned'
+												: `series:${group.series}`
+										}
+										className={styles.previewCard}
+										to="/bookshelf/series"
+										search={{ name: group.series }}
+									>
+										<BookCover book={representative} />
+										<span className={styles.previewName}>
+											{group.series ?? 'シリーズ未設定'}
+										</span>
+										<span className={styles.previewMeta}>
+											{group.books.length} 冊
+										</span>
+									</Link>
+								)
+							})}
+						</div>
+					</section>
+					{newBooks.length > 0 && (
+						<section
+							className={styles.preview}
+							aria-labelledby="top-new-heading"
+						>
+							<div className={styles.previewHead}>
+								<h2 id="top-new-heading">新しい本</h2>
+								<span>最大10</span>
+								<Link className={styles.previewMore} to="/bookshelf">
+									すべて見る
+								</Link>
+							</div>
+							<ul className={styles.previewGrid}>
+								{newBooks.map((book) => (
+									<li key={book.id}>
+										<SeriesBook book={book} />
+									</li>
+								))}
+							</ul>
+						</section>
+					)}
+				</>
+			)}
 			<footer className={styles.foot}>
 				<button
 					className={styles.settingsLink}
@@ -98,7 +177,7 @@ function Home() {
 					設定
 				</button>
 				<br />
-				選んだファイルは端末内で処理され、アップロード・保存されません。クラウドの本は読書時に取得します。
+				クラウドの本は読書時に取得します。
 				<br />
 				<span>
 					操作：画面の左右端をタップ · ← → · Space / PageUp / PageDown
@@ -107,3 +186,5 @@ function Home() {
 		</main>
 	)
 }
+
+export const Route = createFileRoute('/')({ component: Home })

@@ -24,7 +24,9 @@ const AppShell = () => {
 	const { pathname, search } = useLocation()
 	const active = pathname !== '/config'
 	const from =
-		pathname === '/bookshelf' || pathname === '/bookshelf/series'
+		pathname === '/bookshelf' ||
+		pathname === '/bookshelf/series' ||
+		pathname === '/history'
 			? pathname
 			: undefined
 	return (

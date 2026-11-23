@@ -42,7 +42,7 @@ const openFixedEpub = async (
 			JSON.stringify({ spread: 'single', firstPageSingle: false }),
 		),
 	)
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'fixed.epub',
@@ -73,7 +73,7 @@ test('fixed-layout EPUB keeps a visible outgoing image while navigation is delay
 			JSON.stringify({ spread: 'single', firstPageSingle: false }),
 		),
 	)
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'fixed.epub',
@@ -542,7 +542,7 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
 			JSON.stringify({ spread: 'double', firstPageSingle: false }),
 		),
 	)
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'fixed.epub',

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 import { Bookshelf, BookshelfBook } from '#components/library/Bookshelf'
+import { History } from '#components/library/History'
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { sortBooks } from '#lib/library/bookshelf'
 import { parseAuthorName, validBookMetadata } from '#lib/library/metadata'
@@ -12,7 +13,7 @@ import styles from '#components/library/Library.module.css'
 
 interface LibraryProps {
 	cancelPending: RefObject<(() => void) | null>
-	presentation?: 'list' | 'bookshelf' | 'series'
+	presentation?: 'list' | 'bookshelf' | 'series' | 'history'
 	seriesName?: string
 }
 
@@ -39,7 +40,7 @@ const validBook = (value: unknown): value is CloudBook => {
 	)
 }
 
-const booksFromResponse = (value: unknown): CloudBook[] => {
+export const booksFromResponse = (value: unknown): CloudBook[] => {
 	if (!isRecord(value) || !Array.isArray(value.books))
 		throw new Error('Invalid book list response')
 	return value.books.filter(validBook)
@@ -323,6 +324,19 @@ export const Library = ({
 	if (presentation === 'bookshelf')
 		return (
 			<Bookshelf
+				books={books}
+				loading={loading}
+				listError={listError}
+				retry={retry}
+				busyId={busyId}
+				openBook={openBook}
+				downloadError={downloadError}
+			/>
+		)
+
+	if (presentation === 'history')
+		return (
+			<History
 				books={books}
 				loading={loading}
 				listError={listError}
