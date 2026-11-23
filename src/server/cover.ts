@@ -85,7 +85,7 @@ const attributes = (source: string) =>
 	)
 
 const manifestItems = (opf: string): ManifestItem[] =>
-	[...opf.matchAll(/<item\b([^>]*)>/gi)].map((match) => {
+	[...opf.matchAll(/<(?:[\w-]+:)?item\b([^>]*)>/gi)].map((match) => {
 		const attrs = attributes(match[1])
 		return {
 			id: attrs.get('id') ?? '',
@@ -95,7 +95,7 @@ const manifestItems = (opf: string): ManifestItem[] =>
 	})
 
 const metaCoverId = (opf: string) =>
-	[...opf.matchAll(/<meta\b([^>]*)>/gi)]
+	[...opf.matchAll(/<(?:[\w-]+:)?meta\b([^>]*)>/gi)]
 		.map((match) => attributes(match[1]))
 		.find((attrs) => attrs.get('name') === 'cover')
 		?.get('content')
@@ -165,7 +165,7 @@ const opfPathOf = async (entries: FileEntry[]) => {
 	if (!container) return undefined
 	const xml = await readText(container)
 	if (xml === undefined) return undefined
-	const rootfile = /<rootfile\b([^>]*)>/i.exec(xml)
+	const rootfile = /<(?:[\w-]+:)?rootfile\b([^>]*)>/i.exec(xml)
 	return attributes(rootfile?.[1] ?? '').get('full-path')
 }
 
@@ -178,7 +178,11 @@ const epubCover = async (entries: FileEntry[]) => {
 	if (opf === undefined) return undefined
 	const base = opfPath.split('/').slice(0, -1)
 	for (const href of candidateHrefs(manifestItems(opf), metaCoverId(opf))) {
-		const entry = findEntry(entries, joinPath(base, href))
+		// Absolute hrefs resolve from the archive root, not the OPF directory.
+		const entry = findEntry(
+			entries,
+			joinPath(href.startsWith('/') ? [] : base, href),
+		)
 		if (!entry) continue
 		const bytes = await readBytes(entry, imageSizeLimit)
 		if (!bytes) continue

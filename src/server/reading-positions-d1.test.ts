@@ -5,7 +5,10 @@ import { after, before, test } from 'node:test'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { Miniflare } from 'miniflare'
 
-import { handleReadingPosition } from '#server/reading-positions.ts'
+import {
+	handleReadingPosition,
+	handleReadingPositions,
+} from '#server/reading-positions.ts'
 
 const team = 'position-test.cloudflareaccess.com'
 const issuer = `https://${team}`
@@ -42,14 +45,11 @@ before(async () => {
 	jwk = await exportJWK(pair.publicKey)
 	Object.assign(jwk, { kid: 'position-key', alg: 'RS256', use: 'sig' })
 	db = await miniflare.getD1Database('DB')
-	await db
-		.prepare(
-			await readFile(
-				'db/migrations/20261116133257_lazy_the_watchers.sql',
-				'utf8',
-			),
-		)
-		.run()
+	for (const migration of [
+		'20261116133257_lazy_the_watchers.sql',
+		'20261123104135_sudden_gorgon.sql',
+	])
+		await db.prepare(await readFile(`db/migrations/${migration}`, 'utf8')).run()
 	globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
 		const url = input instanceof Request ? input.url : input.toString()
 		return url === `${issuer}/cdn-cgi/access/certs`
@@ -119,12 +119,25 @@ void test('reads, updates, retries idempotently, and confines rows to authentica
 	}
 	const first = await handle('PUT', input)
 	assert.equal(first.status, 200)
-	assert.deepEqual(await responseData(first), {
-		position: { cfi: input.cfi, revision: 1, mutationId: input.mutationId },
-	})
-	assert.deepEqual(await responseData(await handle('PUT', input)), {
-		position: { cfi: input.cfi, revision: 1, mutationId: input.mutationId },
-	})
+	const firstData = (await responseData(first)) as {
+		position: {
+			cfi: string
+			revision: number
+			mutationId: string
+			updatedAt: number
+		}
+	}
+	assert.deepEqual(
+		{
+			cfi: firstData.position.cfi,
+			revision: firstData.position.revision,
+			mutationId: firstData.position.mutationId,
+		},
+		{ cfi: input.cfi, revision: 1, mutationId: input.mutationId },
+	)
+	assert.ok(Number.isSafeInteger(firstData.position.updatedAt))
+	assert.ok(firstData.position.updatedAt >= 0)
+	assert.deepEqual(await responseData(await handle('PUT', input)), firstData)
 	const update = {
 		cfi: 'epubcfi(/6/4)',
 		baseRevision: 1,
@@ -132,9 +145,25 @@ void test('reads, updates, retries idempotently, and confines rows to authentica
 	}
 	const updated = await handle('PUT', update)
 	assert.equal(updated.status, 200)
-	assert.deepEqual(await responseData(updated), {
-		position: { cfi: update.cfi, revision: 2, mutationId: update.mutationId },
-	})
+	const updatedData = (await responseData(updated)) as {
+		position: {
+			cfi: string
+			revision: number
+			mutationId: string
+			updatedAt: number
+		}
+	}
+	assert.deepEqual(
+		{
+			cfi: updatedData.position.cfi,
+			revision: updatedData.position.revision,
+			mutationId: updatedData.position.mutationId,
+		},
+		{ cfi: update.cfi, revision: 2, mutationId: update.mutationId },
+	)
+	assert.ok(Number.isSafeInteger(updatedData.position.updatedAt))
+	assert.ok(updatedData.position.updatedAt >= 0)
+	assert.ok(updatedData.position.updatedAt >= firstData.position.updatedAt)
 	assert.deepEqual(
 		await responseData(await handle('GET', undefined, 'other')),
 		{
@@ -164,6 +193,71 @@ void test('reads, updates, retries idempotently, and confines rows to authentica
 			})
 		).status,
 		409,
+	)
+})
+
+void test('lists positions newest first, isolates subjects, includes legacy rows, and checks access', async () => {
+	await db
+		.prepare(
+			'INSERT INTO reading_positions (user_id, book_id, cfi, revision, mutation_id) VALUES (?, ?, ?, ?, ?)',
+		)
+		.bind(
+			'list-reader',
+			'0'.repeat(64),
+			'epubcfi(/6/2)',
+			1,
+			'123e4567-e89b-42d3-a456-426614174100',
+		)
+		.run()
+	await db
+		.prepare(
+			'INSERT INTO reading_positions (user_id, book_id, cfi, revision, mutation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+		)
+		.bind(
+			'list-reader',
+			'1'.repeat(64),
+			'epubcfi(/6/2)',
+			1,
+			'123e4567-e89b-42d3-a456-426614174101',
+			100,
+		)
+		.run()
+	await db
+		.prepare(
+			'INSERT INTO reading_positions (user_id, book_id, cfi, revision, mutation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+		)
+		.bind(
+			'other-reader',
+			'2'.repeat(64),
+			'epubcfi(/6/2)',
+			1,
+			'123e4567-e89b-42d3-a456-426614174102',
+			200,
+		)
+		.run()
+	const request = await requestFor('GET', undefined, undefined, 'list-reader')
+	const response = await handleReadingPositions(request, envFor())
+	assert.deepEqual(await responseData(response), {
+		positions: [
+			{ bookId: '1'.repeat(64), updatedAt: 100 },
+			{ bookId: '0'.repeat(64), updatedAt: 0 },
+		],
+	})
+	const post = new Request(request.url, {
+		method: 'POST',
+		headers: request.headers,
+	})
+	const methodResponse = await handleReadingPositions(post, envFor())
+	assert.equal(methodResponse.status, 405)
+	assert.equal(methodResponse.headers.get('Allow'), 'GET')
+	assert.equal(
+		(await handleReadingPositions(new Request(request.url), envFor())).status,
+		401,
+	)
+	assert.equal(
+		(await handleReadingPositions(request, { ...envFor(), DB: undefined }))
+			.status,
+		503,
 	)
 })
 
@@ -203,6 +297,8 @@ void test('concurrent writes acknowledge only the committed request and duplicat
 			cfi: winningInput.cfi,
 			revision: 1,
 			mutationId: winningInput.mutationId,
+			updatedAt: (acknowledged as { position: { updatedAt: number } }).position
+				.updatedAt,
 		},
 	})
 	assert.deepEqual(
@@ -221,16 +317,26 @@ void test('concurrent writes acknowledge only the committed request and duplicat
 		duplicates.map(({ status }) => status),
 		[200, 200],
 	)
+	const duplicateCurrent = (await responseData(
+		await handle('GET', undefined, 'duplicates'),
+	)) as {
+		position: {
+			cfi: string
+			revision: number
+			mutationId: string
+			updatedAt: number
+		}
+	}
 	assert.deepEqual(
-		await responseData(await handle('GET', undefined, 'duplicates')),
 		{
-			position: {
-				cfi: duplicate.cfi,
-				revision: 1,
-				mutationId: duplicate.mutationId,
-			},
+			cfi: duplicateCurrent.position.cfi,
+			revision: duplicateCurrent.position.revision,
+			mutationId: duplicateCurrent.position.mutationId,
 		},
+		{ cfi: duplicate.cfi, revision: 1, mutationId: duplicate.mutationId },
 	)
+	assert.ok(Number.isSafeInteger(duplicateCurrent.position.updatedAt))
+	assert.ok(duplicateCurrent.position.updatedAt >= 0)
 })
 
 void test('accepts a long multibyte CFI and stores it exactly', async () => {
@@ -243,12 +349,26 @@ void test('accepts a long multibyte CFI and stores it exactly', async () => {
 	}
 	const response = await handle('PUT', input, 'multibyte-cfi')
 	assert.equal(response.status, 200)
+	const current = (await responseData(
+		await handle('GET', undefined, 'multibyte-cfi'),
+	)) as {
+		position: {
+			cfi: string
+			revision: number
+			mutationId: string
+			updatedAt: number
+		}
+	}
 	assert.deepEqual(
-		await responseData(await handle('GET', undefined, 'multibyte-cfi')),
 		{
-			position: { cfi, revision: 1, mutationId: input.mutationId },
+			cfi: current.position.cfi,
+			revision: current.position.revision,
+			mutationId: current.position.mutationId,
 		},
+		{ cfi, revision: 1, mutationId: input.mutationId },
 	)
+	assert.ok(Number.isSafeInteger(current.position.updatedAt))
+	assert.ok(current.position.updatedAt >= 0)
 })
 
 void test('validates write origin, content type, body shape, and rejects spoofed identity', async () => {
