@@ -1,3 +1,4 @@
+import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import {
@@ -16,6 +17,7 @@ const record = { id, name: "O'Brian!(1).zip", format: 'zip', size: 4 }
 
 const bucketFor = (objects: Record<string, string | Uint8Array> = {}) => {
 	const gets: string[] = []
+	const puts: { key: string; value: Uint8Array }[] = []
 	const bucket = {
 		get: async (key: string) => {
 			gets.push(key)
@@ -34,8 +36,18 @@ const bucketFor = (objects: Record<string, string | Uint8Array> = {}) => {
 				text: async () => new TextDecoder().decode(bytes),
 			}
 		},
+		put: async (key: string, value: Uint8Array) => {
+			puts.push({ key, value })
+			objects[key] = value
+		},
 	}
-	return { bucket, gets }
+	return { bucket, gets, puts }
+}
+
+const zipOf = async (name: string, bytes: Uint8Array) => {
+	const writer = new ZipWriter(new Uint8ArrayWriter())
+	await writer.add(name, new Uint8ArrayReader(bytes), { level: 0 })
+	return writer.close()
 }
 
 const envFor = (
@@ -267,7 +279,13 @@ describe('handleLibrary', () => {
 				book: record,
 				size: 4,
 				path: `/api/books/${id}/cover`,
-				reads: ['library.json'],
+				reads: [
+					'library.json',
+					`covers/${id}.webp`,
+					`covers/${id}.jpg`,
+					`covers/${id}.png`,
+					`books/${id}.zip`,
+				],
 			},
 			{
 				name: 'missing object',
@@ -328,6 +346,237 @@ describe('handleLibrary', () => {
 		expect(post.headers.get('Allow')).toBe('GET')
 	})
 
+	test('generates an unmarked cover from the book once, then serves the saved copy', async () => {
+		const png = new Uint8Array([
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d,
+		])
+		const zip = await zipOf('cover.png', png)
+		const zipRecord = { ...record, size: zip.byteLength }
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({ books: [zipRecord] }),
+			[`books/${id}.zip`]: zip,
+		})
+		const first = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(first.status).toBe(200)
+		expect(new Uint8Array(await first.arrayBuffer())).toEqual(png)
+		expect(first.headers.get('Content-Type')).toBe('image/png')
+		expect(first.headers.get('Content-Length')).toBe(String(png.byteLength))
+		failureHeaders(first)
+		expect(fixture.puts).toEqual([{ key: `covers/${id}.png`, value: png }])
+
+		const bookless = bucketFor({
+			'library.json': JSON.stringify({ books: [zipRecord] }),
+			[`covers/${id}.png`]: png,
+		})
+		const second = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(bookless.bucket),
+		)
+		expect(second.status).toBe(200)
+		expect(new Uint8Array(await second.arrayBuffer())).toEqual(png)
+		expect(second.headers.get('Content-Type')).toBe('image/png')
+		expect(bookless.gets).toEqual([
+			'library.json',
+			`covers/${id}.webp`,
+			`covers/${id}.jpg`,
+			`covers/${id}.png`,
+		])
+	})
+
+	test('serves a valid stored webp for unmarked books without reading the book', async () => {
+		const webp = new Uint8Array(
+			Buffer.from(
+				'UklGRiwAAABXRUJQVlA4ICAAAABQAQCdASoCAAMAAgA0JQBOgC6gAP7w6MQh1VpbmxIAAA==',
+				'base64',
+			),
+		)
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({ books: [record] }),
+			[`covers/${id}.webp`]: webp,
+		})
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(result.status).toBe(200)
+		expect(new Uint8Array(await result.arrayBuffer())).toEqual(webp)
+		expect(result.headers.get('Content-Type')).toBe('image/webp')
+		failureHeaders(result)
+		expect(fixture.gets).toEqual(['library.json', `covers/${id}.webp`])
+		expect(fixture.puts).toEqual([])
+	})
+
+	test('ignores a non-webp stored webp key and generates from the book', async () => {
+		const png = new Uint8Array([
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d,
+		])
+		const zip = await zipOf('cover.png', png)
+		const zipRecord = { ...record, size: zip.byteLength }
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({ books: [zipRecord] }),
+			[`covers/${id}.webp`]: new Uint8Array([1, 2, 3, 4]),
+			[`books/${id}.zip`]: zip,
+		})
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(result.status).toBe(200)
+		expect(new Uint8Array(await result.arrayBuffer())).toEqual(png)
+		expect(result.headers.get('Content-Type')).toBe('image/png')
+		failureHeaders(result)
+		expect(fixture.puts).toEqual([{ key: `covers/${id}.png`, value: png }])
+	})
+
+	test('rejects malformed stored webp keys and generates from the book', async () => {
+		const png = new Uint8Array([
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d,
+		])
+		const zip = await zipOf('cover.png', png)
+		const zipRecord = { ...record, size: zip.byteLength }
+		const encode = (value: string) => new TextEncoder().encode(value)
+		for (const [name, stored] of [
+			['riff without webp', encode('RIFF....AVI ')],
+			['webp tag without riff', encode('XXXX....WEBP')],
+		] as const) {
+			const fixture = bucketFor({
+				'library.json': JSON.stringify({ books: [zipRecord] }),
+				[`covers/${id}.webp`]: stored,
+				[`books/${id}.zip`]: zip,
+			})
+			const result = await handleLibrary(
+				await authorized(`/api/books/${id}/cover`),
+				envFor(fixture.bucket),
+			)
+			expect(result.status, name).toBe(200)
+			expect(new Uint8Array(await result.arrayBuffer()), name).toEqual(png)
+			expect(result.headers.get('Content-Type'), name).toBe('image/png')
+			failureHeaders(result)
+			expect(fixture.puts, name).toEqual([
+				{ key: `covers/${id}.png`, value: png },
+			])
+		}
+	})
+
+	test('still serves the generated cover when the save fails', async () => {
+		const png = new Uint8Array([
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d,
+		])
+		const zip = await zipOf('cover.png', png)
+		const zipRecord = { ...record, size: zip.byteLength }
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({ books: [zipRecord] }),
+			[`books/${id}.zip`]: zip,
+		})
+		fixture.bucket.put = async () => {
+			throw new Error('R2 unavailable')
+		}
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(result.status).toBe(200)
+		expect(new Uint8Array(await result.arrayBuffer())).toEqual(png)
+		expect(result.headers.get('Content-Type')).toBe('image/png')
+		failureHeaders(result)
+	})
+
+	test('never overwrites an existing webp with a generated one', async () => {
+		const webp = new Uint8Array(
+			Buffer.from(
+				'UklGRiwAAABXRUJQVlA4ICAAAABQAQCdASoCAAMAAgA0JQBOgC6gAP7w6MQh1VpbmxIAAA==',
+				'base64',
+			),
+		)
+		const zip = await zipOf('cover.webp', webp)
+		const zipRecord = { ...record, size: zip.byteLength }
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({ books: [zipRecord] }),
+			[`covers/${id}.webp`]: new Uint8Array([1, 2, 3, 4]),
+			[`books/${id}.zip`]: zip,
+		})
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(result.status).toBe(200)
+		expect(new Uint8Array(await result.arrayBuffer())).toEqual(webp)
+		expect(result.headers.get('Content-Type')).toBe('image/webp')
+		failureHeaders(result)
+		expect(fixture.puts).toEqual([])
+	})
+
+	test('prefers stored webp over generated formats', async () => {
+		const webp = new Uint8Array(
+			Buffer.from(
+				'UklGRiwAAABXRUJQVlA4ICAAAABQAQCdASoCAAMAAgA0JQBOgC6gAP7w6MQh1VpbmxIAAA==',
+				'base64',
+			),
+		)
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({ books: [record] }),
+			[`covers/${id}.webp`]: webp,
+			[`covers/${id}.png`]: webp,
+		})
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(result.status).toBe(200)
+		expect(new Uint8Array(await result.arrayBuffer())).toEqual(webp)
+		expect(result.headers.get('Content-Type')).toBe('image/webp')
+		failureHeaders(result)
+		expect(fixture.gets).toEqual(['library.json', `covers/${id}.webp`])
+		expect(fixture.puts).toEqual([])
+	})
+
+	test('refuses to generate from books over the memory limit', async () => {
+		const fixture = bucketFor({
+			'library.json': JSON.stringify({
+				books: [{ ...record, size: 33_554_433 }],
+			}),
+			[`books/${id}.zip`]: new Uint8Array(33_554_433),
+		})
+		const result = await handleLibrary(
+			await authorized(`/api/books/${id}/cover`),
+			envFor(fixture.bucket),
+		)
+		expect(result.status).toBe(404)
+		failureHeaders(result)
+		expect(fixture.puts).toEqual([])
+	})
+
+	test('returns 404 without writing when the book is missing, broken, or unsupported', async () => {
+		const gif = new TextEncoder().encode('GIF89a')
+		const cases = [
+			{ name: 'missing book', objects: {} },
+			{
+				name: 'broken book',
+				objects: { [`books/${id}.zip`]: new Uint8Array([1, 2, 3]) },
+			},
+			{
+				name: 'unsupported image',
+				objects: { [`books/${id}.zip`]: await zipOf('page.gif', gif) },
+			},
+		]
+		for (const { name, objects } of cases) {
+			const fixture = bucketFor({
+				'library.json': JSON.stringify({ books: [record] }),
+				...objects,
+			})
+			const result = await handleLibrary(
+				await authorized(`/api/books/${id}/cover`),
+				envFor(fixture.bucket),
+			)
+			expect(result.status, name).toBe(404)
+			failureHeaders(result)
+			expect(fixture.puts, name).toEqual([])
+		}
+	})
+
 	test('returns controlled errors for missing objects and R2 lookup failures', async () => {
 		const missing = bucketFor({
 			'library.json': JSON.stringify({ books: [record] }),
@@ -344,6 +593,7 @@ describe('handleLibrary', () => {
 			get: async () => {
 				throw new Error(detail)
 			},
+			put: async () => undefined,
 		}
 		const failed = await handleLibrary(
 			await authorized('/api/books'),
@@ -476,6 +726,7 @@ describe('handleLibrary', () => {
 					'library.json': JSON.stringify({ books: [record] }),
 				}).bucket.get(key)
 			},
+			put: async () => undefined,
 		}
 		const result = await handleLibrary(
 			await authorized(`/api/books/${id}`),
