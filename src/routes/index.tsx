@@ -89,7 +89,10 @@ function Home() {
 				<button
 					className={styles.settingsLink}
 					onClick={() =>
-						void navigate({ to: '/config', search: { from: undefined } })
+						void navigate({
+							to: '/config',
+							search: { from: undefined, name: undefined },
+						})
 					}
 				>
 					設定

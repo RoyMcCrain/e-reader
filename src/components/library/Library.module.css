@@ -6,6 +6,16 @@
 	background: #ffffffa1;
 	text-align: left;
 }
+.series {
+	max-width: 1240px;
+}
+.series h1 {
+	overflow-wrap: anywhere;
+}
+.series .books {
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+	gap: 1rem;
+}
 .library h2 {
 	margin: 0 0 12px;
 	color: #52694e;

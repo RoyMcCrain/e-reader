@@ -2,13 +2,21 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
+import { parseSeriesName } from '#lib/library/metadata'
 import { DEFAULT_SETTINGS, type ReaderSettings } from '#lib/reader/preferences'
 
 import styles from '#routes/config.module.css'
 
 export const Route = createFileRoute('/config')({
 	validateSearch: (search: Record<string, unknown>) => ({
-		from: search.from === '/bookshelf' ? ('/bookshelf' as const) : undefined,
+		from:
+			search.from === '/bookshelf' || search.from === '/bookshelf/series'
+				? search.from
+				: undefined,
+		name:
+			search.from === '/bookshelf/series'
+				? parseSeriesName(search.name)
+				: undefined,
 	}),
 	component: Config,
 })
@@ -89,7 +97,7 @@ const NumericSetting = ({
 function Config() {
 	const { settings, updateSettings, resetSettings, file } = useReaderApp()
 	const navigate = useNavigate()
-	const { from } = Route.useSearch()
+	const { from, name } = Route.useSearch()
 	const setNumber = (field: keyof ReaderSettings, value: number) =>
 		updateSettings({ [field]: value })
 	return (
@@ -97,7 +105,13 @@ function Config() {
 			<header className={styles.header}>
 				<button
 					className={styles.back}
-					onClick={() => void navigate({ to: from ?? '/' })}
+					onClick={() =>
+						void navigate(
+							from === '/bookshelf/series'
+								? { to: '/bookshelf/series', search: { name } }
+								: { to: from ?? '/' },
+						)
+					}
 					aria-label={file ? '読書に戻る' : '戻る'}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true">

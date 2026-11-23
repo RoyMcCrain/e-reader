@@ -2,11 +2,14 @@ const seriesPattern = /^[^\p{Cc}]{1,240}$/u
 const timestampPattern =
 	/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$/
 
-const validSeries = (value: unknown) =>
+const validSeries = (value: unknown): value is string =>
 	typeof value === 'string' &&
 	value.trim() !== '' &&
 	value.trim().length <= 240 &&
 	seriesPattern.test(value)
+
+export const parseSeriesName = (value: unknown) =>
+	validSeries(value) ? value : undefined
 
 const validUploadedAt = (value: unknown) => {
 	if (typeof value !== 'string') return false
