@@ -4,6 +4,7 @@ export interface CloudBook {
 	format: 'epub' | 'zip'
 	size: number
 	series?: string
+	author?: string
 	uploadedAt?: string
 	hasCover?: boolean
 }

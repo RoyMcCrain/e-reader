@@ -1,15 +1,18 @@
-const seriesPattern = /^[^\p{Cc}]{1,240}$/u
+const singleLinePattern = /^[^\p{Cc}]{1,240}$/u
 const timestampPattern =
 	/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$/
 
-const validSeries = (value: unknown): value is string =>
+const validSingleLine = (value: unknown): value is string =>
 	typeof value === 'string' &&
 	value.trim() !== '' &&
 	value.trim().length <= 240 &&
-	seriesPattern.test(value)
+	singleLinePattern.test(value)
 
 export const parseSeriesName = (value: unknown) =>
-	validSeries(value) ? value : undefined
+	validSingleLine(value) ? value : undefined
+
+export const parseAuthorName = (value: unknown) =>
+	validSingleLine(value) ? value.trim() : undefined
 
 const validUploadedAt = (value: unknown) => {
 	if (typeof value !== 'string') return false
@@ -24,6 +27,6 @@ const validUploadedAt = (value: unknown) => {
 }
 
 export const validBookMetadata = (book: Record<string, unknown>) =>
-	(book.series === undefined || validSeries(book.series)) &&
+	(book.series === undefined || validSingleLine(book.series)) &&
 	(book.uploadedAt === undefined || validUploadedAt(book.uploadedAt)) &&
 	(book.hasCover === undefined || typeof book.hasCover === 'boolean')
