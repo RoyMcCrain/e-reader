@@ -8,6 +8,7 @@ export const readingPositions = sqliteTable(
 		cfi: text('cfi').notNull(),
 		revision: integer('revision').notNull(),
 		mutationId: text('mutation_id').notNull(),
+		updatedAt: integer('updated_at').notNull().default(0),
 	},
 	(table) => [primaryKey({ columns: [table.userId, table.bookId] })],
 )

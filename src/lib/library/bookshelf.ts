@@ -55,6 +55,20 @@ export const filterBooks = (books: CloudBook[], filters: BookFilters) => {
 export const sortBooks = (books: CloudBook[], sort: BookSort) =>
 	[...books].sort(comparators[sort])
 
+export const selectRecentBooks = (
+	books: CloudBook[],
+	recency: Record<string, number>,
+	limit: number,
+) =>
+	books
+		.filter((book) => recency[book.id] > 0)
+		.sort(
+			(left, right) =>
+				recency[right.id]! - recency[left.id]! ||
+				left.id.localeCompare(right.id),
+		)
+		.slice(0, limit)
+
 export const groupBooks = (books: CloudBook[]) => {
 	const groups = new Map<string | undefined, CloudBook[]>()
 	for (const book of sortBooks(books, 'series')) {

@@ -206,4 +206,53 @@ describe('extractCover', () => {
 			ext: 'png',
 		})
 	})
+
+	test('handles namespace-prefixed container and OPF tags', async () => {
+		const bytes = await zipOf({
+			'META-INF/container.xml': text(
+				'<ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container"><ocf:rootfiles><ocf:rootfile full-path="OEBPS/content.opf"/></ocf:rootfiles></ocf:container>',
+			),
+			'OEBPS/content.opf': text(
+				manifest(
+					'<opf:item id="c" href="cover.png" xmlns:opf="http://www.idpf.org/2007/opf"/>',
+					'<opf:meta name="cover" content="c"/>',
+				),
+			),
+			'OEBPS/cover.png': png,
+		})
+
+		expect(await extractCover(bytes, 'epub')).toEqual({
+			data: png,
+			contentType: 'image/png',
+			ext: 'png',
+		})
+	})
+
+	test('resolves absolute-path OPF hrefs from the archive root', async () => {
+		const opf = manifest(
+			'<item id="c" href="/OEBPS/cover.png" media-type="image/png"/>',
+			'<meta name="cover" content="c"/>',
+		)
+		const bytes = await epubOf(opf, { 'OEBPS/cover.png': png })
+
+		expect(await extractCover(bytes, 'epub')).toEqual({
+			data: png,
+			contentType: 'image/png',
+			ext: 'png',
+		})
+	})
+
+	test('falls back when the cover id is missing from the manifest', async () => {
+		const opf = manifest(
+			'<item id="b" href="b.png" media-type="image/png" properties="cover-image"/>',
+			'<meta name="cover" content="gone"/>',
+		)
+		const bytes = await epubOf(opf, { 'OEBPS/b.png': png })
+
+		expect(await extractCover(bytes, 'epub')).toEqual({
+			data: png,
+			contentType: 'image/png',
+			ext: 'png',
+		})
+	})
 })

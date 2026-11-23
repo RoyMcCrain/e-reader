@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'vite-plus/test'
 
-import { filterBooks, groupBooks, sortBooks } from './bookshelf'
+import {
+	filterBooks,
+	groupBooks,
+	selectRecentBooks,
+	sortBooks,
+} from './bookshelf'
 import type { CloudBook } from './types'
 
 const books: CloudBook[] = [
@@ -94,6 +99,34 @@ describe('bookshelf helpers', () => {
 			'missing-a',
 			'missing-z',
 		])
+	})
+
+	test('selects synced recent books by timestamp, excludes zero or missing positions, and limits stable ties', () => {
+		const tied = [
+			...books.slice(0, 3),
+			...Array.from({ length: 8 }, (_, index) => ({
+				id: `tie-${index}`,
+				name: `同時刻 ${index}.epub`,
+				format: 'epub' as const,
+				size: 1,
+			})),
+		]
+		const recency = Object.fromEntries([
+			...tied.map(({ id }) => [id, 20] as const),
+			['b', 30],
+			['d', 0],
+		])
+		expect(selectRecentBooks(tied, recency, 8).map(({ id }) => id)).toEqual([
+			'b',
+			'a',
+			'c',
+			'tie-0',
+			'tie-1',
+			'tie-2',
+			'tie-3',
+			'tie-4',
+		])
+		expect(selectRecentBooks(tied, { a: 0, b: -1 }, 8)).toEqual([])
 	})
 
 	test('groups unassigned books separately from a real series with the same display label', () => {

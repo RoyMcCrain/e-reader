@@ -51,6 +51,22 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 }) => {
 	const coverRequests: string[] = []
 	let bookRequests = 0
+	await page.route('**/api/reading-positions', async (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				positions: [
+					{ bookId: books[2]!.id, updatedAt: 200 },
+					{ bookId: books[1]!.id, updatedAt: 100 },
+					...Array.from({ length: 10 }, (_, index) => ({
+						bookId: `${index}`.repeat(64),
+						updatedAt: 300 - index,
+					})),
+				],
+			}),
+		}),
+	)
 	await page.route('**/api/books', async (route) =>
 		route.fulfill({
 			status: 200,
@@ -91,6 +107,21 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	await expect(searchInput).toBeVisible()
 	await expect(searchInput).toBeFocused()
 	const all = page.getByRole('region', { name: 'すべての本' })
+	const read = page.getByRole('region', { name: '最近読んだ本' })
+	const readBooks = read.getByRole('button')
+	await expect(readBooks).toHaveCount(2)
+	await expect(readBooks.nth(0)).toHaveAccessibleName(/別作品/)
+	await expect(readBooks.nth(1)).toHaveAccessibleName(/巻2/)
+	const readBox = await read.boundingBox()
+	const allBox = await all.boundingBox()
+	const uploadBox = await page
+		.getByRole('region', { name: '最近アップロードされた本' })
+		.boundingBox()
+	expect(readBox).not.toBeNull()
+	expect(allBox).not.toBeNull()
+	expect(uploadBox).not.toBeNull()
+	expect(readBox!.y).toBeLessThan(allBox!.y)
+	expect(allBox!.y).toBeLessThan(uploadBox!.y)
 	const seriesHeading = all.getByRole('heading', { name: /星の旅/ })
 	const group = seriesHeading.locator('..')
 	const volumes = group.getByRole('button')
@@ -194,20 +225,6 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	await page.setViewportSize({ width: 720, height: 748 })
 	await expect(recent.getByRole('button')).toHaveCount(2)
 	await expect(all.getByRole('button')).toHaveCount(2)
-	const recentPane = await recent.boundingBox()
-	const allPane = await all.boundingBox()
-	expect(recentPane).not.toBeNull()
-	expect(allPane).not.toBeNull()
-	expect(allPane!.x).toBeGreaterThan(recentPane!.x + recentPane!.width)
-	const recentTitle = await recent
-		.getByRole('heading', { name: '最近アップロードされた本' })
-		.boundingBox()
-	const allTitle = await all
-		.getByRole('heading', { name: 'すべての本' })
-		.boundingBox()
-	expect(recentTitle).not.toBeNull()
-	expect(allTitle).not.toBeNull()
-	expect(Math.abs(allTitle!.y - recentTitle!.y)).toBeLessThan(2)
 	const firstResult = await ordered.nth(0).boundingBox()
 	const secondResult = await ordered.nth(1).boundingBox()
 	expect(firstResult).not.toBeNull()
@@ -238,6 +255,101 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 		footerBox!.y + 1,
 	)
 	expect(mainBox!.y + mainBox!.height).toBeLessThanOrEqual(footerBox!.y + 1)
+})
+
+test('limits recent-reading shelf to eight books in recency order', async ({
+	page,
+}) => {
+	const recentBooks = Array.from({ length: 10 }, (_, index) => ({
+		id: index.toString(16).padStart(64, '0'),
+		name: `既読 ${index}.epub`,
+		format: 'epub',
+		size: 10,
+	}))
+	await page.route('**/api/books', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ books: recentBooks }),
+		}),
+	)
+	await page.route('**/api/reading-positions', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				positions: recentBooks.map(({ id }, index) => ({
+					bookId: id,
+					updatedAt: index + 1,
+				})),
+			}),
+		}),
+	)
+	await page.route('**/api/books/*/cover', (route) =>
+		route.fulfill({ status: 404, body: 'Not found' }),
+	)
+	await page.goto('/bookshelf')
+	const cards = page
+		.getByRole('region', { name: '最近読んだ本' })
+		.getByRole('button')
+	await expect(cards).toHaveCount(8)
+	await expect(cards.first()).toHaveAccessibleName(/既読 9/)
+	await expect(cards.last()).toHaveAccessibleName(/既読 2/)
+})
+
+test('shows an empty recent-reading shelf after a successful position lookup', async ({
+	page,
+}) => {
+	await page.route('**/api/books', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ books: [] }),
+		}),
+	)
+	await page.route('**/api/reading-positions', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ positions: [] }),
+		}),
+	)
+	await page.goto('/bookshelf')
+	await expect(
+		page.getByRole('region', { name: '最近読んだ本' }),
+	).toContainText('まだ読んだ本がありません。')
+})
+
+test('hides the recently-read shelf when the position lookup fails', async ({
+	page,
+}) => {
+	const shelfBook = {
+		id: 'e'.repeat(64),
+		name: '棚の本.epub',
+		format: 'epub',
+		size: 10,
+	}
+	await page.route('**/api/books', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ books: [shelfBook] }),
+		}),
+	)
+	await page.route('**/api/reading-positions', (route) =>
+		route.fulfill({ status: 500, body: 'unavailable' }),
+	)
+	await page.route('**/api/books/*/cover', (route) =>
+		route.fulfill({ status: 404, body: 'Not found' }),
+	)
+	await page.goto('/bookshelf')
+	await expect(page.getByRole('region', { name: '最近読んだ本' })).toHaveCount(
+		0,
+	)
+	await expect(page.getByRole('region', { name: 'すべての本' })).toBeVisible()
+	await expect(
+		page.getByRole('region', { name: '最近アップロードされた本' }),
+	).toBeVisible()
 })
 
 test('bookshelf opens a ZIP in the reader and closes through settings back to shelf', async ({

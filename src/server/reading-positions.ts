@@ -8,6 +8,7 @@ interface Position {
 	cfi: string
 	revision: number
 	mutationId: string
+	updatedAt: number
 }
 
 interface Mutation {
@@ -108,7 +109,7 @@ const parseMutation = async (request: Request) => {
 const selectPosition = (env: PositionEnv, userId: string, bookId: string) =>
 	env
 		.DB!.prepare(
-			'SELECT cfi, revision, mutation_id AS mutationId FROM reading_positions WHERE user_id = ? AND book_id = ?',
+			'SELECT cfi, revision, mutation_id AS mutationId, updated_at AS updatedAt FROM reading_positions WHERE user_id = ? AND book_id = ?',
 		)
 		.bind(userId, bookId)
 		.first<Position>()
@@ -118,19 +119,21 @@ const writeMutation = async (
 	userId: string,
 	bookId: string,
 	input: Mutation,
+	updatedAt: number,
 ) =>
 	env
 		.DB!.prepare(
 			`
-  INSERT INTO reading_positions (user_id, book_id, cfi, revision, mutation_id)
-  SELECT ?, ?, ?, 1, ?
+  INSERT INTO reading_positions (user_id, book_id, cfi, revision, mutation_id, updated_at)
+  SELECT ?, ?, ?, 1, ?, ?
   WHERE ? = 0 OR EXISTS (
     SELECT 1 FROM reading_positions WHERE user_id = ? AND book_id = ?
   )
   ON CONFLICT(user_id, book_id) DO UPDATE SET
     cfi = excluded.cfi,
     revision = reading_positions.revision + 1,
-    mutation_id = excluded.mutation_id
+    mutation_id = excluded.mutation_id,
+    updated_at = excluded.updated_at
   WHERE reading_positions.revision = ?
     AND reading_positions.mutation_id != excluded.mutation_id
 `,
@@ -140,6 +143,7 @@ const writeMutation = async (
 			bookId,
 			input.cfi,
 			input.mutationId,
+			updatedAt,
 			input.baseRevision,
 			userId,
 			bookId,
@@ -164,13 +168,15 @@ const commitMutation = async (
 	const replay = replayResult(current, input)
 	if (replay) return replay
 
-	const result = await writeMutation(env, userId, bookId, input)
+	const updatedAt = Math.floor(Date.now() / 1000)
+	const result = await writeMutation(env, userId, bookId, input, updatedAt)
 	if (result.meta.changes > 0) {
 		return reply({
 			position: {
 				cfi: input.cfi,
 				revision: input.baseRevision + 1,
 				mutationId: input.mutationId,
+				updatedAt,
 			},
 		})
 	}
@@ -199,6 +205,27 @@ const putPosition = async (
 	if ('status' in parsed)
 		return reply({ error: 'invalid payload' }, parsed.status)
 	return commitMutation(env, userId, bookId, parsed.input)
+}
+
+export const handleReadingPositions = async (
+	request: Request,
+	env: PositionEnv,
+) => {
+	const auth = await verifiedSubject(request, env)
+	if (auth.status !== 200) return reply({ error: 'unauthorized' }, auth.status)
+	if (!env.DB) return reply({ error: 'database unavailable' }, 503)
+	if (request.method !== 'GET')
+		return reply({ error: 'method not allowed' }, 405, { Allow: 'GET' })
+	try {
+		const result = await env.DB.prepare(
+			'SELECT book_id AS bookId, updated_at AS updatedAt FROM reading_positions WHERE user_id = ? ORDER BY updated_at DESC, book_id',
+		)
+			.bind(auth.subject)
+			.all<{ bookId: string; updatedAt: number }>()
+		return reply({ positions: result.results })
+	} catch {
+		return reply({ error: 'database unavailable' }, 503)
+	}
 }
 
 export const handleReadingPosition = async (
