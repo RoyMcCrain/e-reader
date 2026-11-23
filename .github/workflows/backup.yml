@@ -1,0 +1,119 @@
+name: R2 backup
+
+# Daily mirror of the private R2 bucket to Google Drive, with a dated
+# backup dir that keeps overwritten/deleted files for the last 7 runs.
+# No repository files are used, so no checkout step is needed.
+#
+# Required `production` environment secrets:
+#   R2_BACKUP_ACCESS_KEY_ID / R2_BACKUP_SECRET_ACCESS_KEY
+#     R2 S3 API token with Object Read on e-reader-books.
+#   GDRIVE_BACKUP_CLIENT_ID / GDRIVE_BACKUP_CLIENT_SECRET
+#     Google Cloud OAuth client (Desktop app) in project e-reader-backup.
+#   GDRIVE_BACKUP_TOKEN_JSON
+#     OAuth token JSON with a refresh token (minted once via auth code).
+#   GDRIVE_BACKUP_FOLDER_ID
+#     ID of the Drive folder receiving the backup (Editor or owner).
+#     Layout inside it: current/ (mirror), history/YYYY-MM-DD/ (rollback).
+#
+# First full sync is ~237 GB and may exceed the 6 h limit; rclone sync is
+# resumable, so re-run via workflow_dispatch until it completes. Later runs
+# only transfer new/changed objects and finish in minutes.
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # 03:00 JST daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r2-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Sync R2 to Google Drive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: production
+    env:
+      R2_ENDPOINT: https://8da37f2c68005226e55dffb2ffc7664b.r2.cloudflarestorage.com
+      R2_BUCKET: e-reader-books
+      DRIVE_ROOT: e-reader-backup
+      KEEP_HISTORY: '7'
+    steps:
+      - name: Install rclone
+        run: |
+          curl -fsS https://rclone.org/install.sh | sudo bash
+        shell: bash
+
+      - name: Write rclone config
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = ${R2_ENDPOINT}
+          acl = private
+          [gdrive]
+          type = drive
+          scope = drive
+          client_id = ${GDRIVE_CLIENT_ID}
+          client_secret = ${GDRIVE_CLIENT_SECRET}
+          token = ${GDRIVE_TOKEN_JSON}
+          root_folder_id = ${GDRIVE_FOLDER_ID}
+          EOF
+          chmod 600 ~/.config/rclone/rclone.conf
+        shell: bash
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_BACKUP_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_BACKUP_CLIENT_SECRET }}
+          GDRIVE_TOKEN_JSON: ${{ secrets.GDRIVE_BACKUP_TOKEN_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_BACKUP_FOLDER_ID }}
+
+      - name: Sync bucket to Drive with dated backup dir
+        run: |
+          DATE=$(date -u +%F)
+          rclone sync "r2:${R2_BUCKET}" "gdrive:${DRIVE_ROOT}/current" \
+            --backup-dir "gdrive:${DRIVE_ROOT}/history/${DATE}" \
+            --fast-list --transfers 16 --checkers 32 \
+            --retries 5 --retries-sleep 30s \
+            --drive-stop-on-upload-limit \
+            --log-file "${RUNNER_TEMP}/rclone.log" -v \
+            --stats 60s --stats-log-level NOTICE
+        shell: bash
+
+      - name: Verify mirror
+        run: |
+          rclone check "r2:${R2_BUCKET}" "gdrive:${DRIVE_ROOT}/current" --one-way
+        shell: bash
+
+      - name: Prune history beyond retention
+        run: |
+          set -euo pipefail
+          mapfile -t dirs < <(rclone lsf "gdrive:${DRIVE_ROOT}/history/" --dirs-only --format p 2>/dev/null | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}/$' | sort -r || true)
+          if [ "${#dirs[@]}" -eq 0 ]; then
+            echo 'no dated history dirs, nothing to prune'
+            exit 0
+          fi
+          i=0
+          for d in "${dirs[@]}"; do
+            i=$((i + 1))
+            if [ "${i}" -gt "${KEEP_HISTORY}" ]; then
+              echo "pruning history/${d}"
+              rclone purge "gdrive:${DRIVE_ROOT}/history/${d}"
+            fi
+          done
+        shell: bash
+
+      - name: Show rclone log tail on failure
+        if: failure()
+        run: |
+          tail -n 100 "${RUNNER_TEMP}/rclone.log"
+        shell: bash
