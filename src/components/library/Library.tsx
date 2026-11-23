@@ -15,6 +15,7 @@ interface LibraryProps {
 	cancelPending: RefObject<(() => void) | null>
 	presentation?: 'list' | 'bookshelf' | 'series' | 'history'
 	seriesName?: string
+	returnFromSeries?: boolean
 }
 
 const formatSize = (size: number) =>
@@ -262,7 +263,9 @@ const SeriesDetails = (props: SeriesDetailsProps) => {
 	const authors = seriesName === undefined ? '' : authorLabel(selected)
 	return (
 		<main className={`${styles.library} ${styles.series}`}>
-			<Link to="/bookshelf">本棚に戻る</Link>
+			<Link to="/bookshelf" search={{ from: 'series' }}>
+				本棚に戻る
+			</Link>
 			<h1>{title}</h1>
 			{authors && <p>著者: {authors}</p>}
 			{!loading && !listError && <p>{selected.length} 冊</p>}
@@ -287,6 +290,7 @@ export const Library = ({
 	cancelPending,
 	presentation = 'list',
 	seriesName,
+	returnFromSeries,
 }: LibraryProps) => {
 	const { setFile } = useReaderApp()
 	const [books, setBooks] = useState<CloudBook[]>([])
@@ -331,6 +335,7 @@ export const Library = ({
 				busyId={busyId}
 				openBook={openBook}
 				downloadError={downloadError}
+				returnFromSeries={returnFromSeries}
 			/>
 		)
 

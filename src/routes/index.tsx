@@ -74,7 +74,11 @@ function Home() {
 					物語の中へ。
 				</h1>
 				<p>
-					<Link className={styles.bookshelfLink} to="/bookshelf">
+					<Link
+						className={styles.bookshelfLink}
+						to="/bookshelf"
+						search={{ from: undefined }}
+					>
 						本棚を開く
 					</Link>{' '}
 					·{' '}
@@ -110,7 +114,11 @@ function Home() {
 						<div className={styles.previewHead}>
 							<h2 id="top-series-heading">シリーズ</h2>
 							<span>最大10</span>
-							<Link className={styles.previewMore} to="/bookshelf">
+							<Link
+								className={styles.previewMore}
+								to="/bookshelf"
+								search={{ from: undefined }}
+							>
 								すべて見る
 							</Link>
 						</div>
@@ -149,7 +157,11 @@ function Home() {
 							<div className={styles.previewHead}>
 								<h2 id="top-new-heading">新しい本</h2>
 								<span>最大10</span>
-								<Link className={styles.previewMore} to="/bookshelf">
+								<Link
+									className={styles.previewMore}
+									to="/bookshelf"
+									search={{ from: undefined }}
+								>
 									すべて見る
 								</Link>
 							</div>

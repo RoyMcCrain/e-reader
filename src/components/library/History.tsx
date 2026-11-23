@@ -122,7 +122,9 @@ export const History = ({
 						<span>BOOKSHELF</span>
 					</a>
 					<nav aria-label="メインナビゲーション">
-						<Link to="/bookshelf">本棚</Link>
+						<Link to="/bookshelf" search={{ from: undefined }}>
+							本棚
+						</Link>
 						<LocalFileButton />
 						<Link to="/config" search={{ from: '/history', name: undefined }}>
 							設定
