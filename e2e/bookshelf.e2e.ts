@@ -130,10 +130,10 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	).toBeVisible()
 	await expect(
 		all.getByRole('button', { name: /未分類/ }).locator('img'),
-	).toHaveCount(0)
-	await expect.poll(() => new Set(coverRequests).size).toBe(2)
+	).toHaveCount(1)
+	await expect.poll(() => new Set(coverRequests).size).toBe(4)
 	expect(new Set(coverRequests)).toEqual(
-		new Set(['a'.repeat(64), 'c'.repeat(64)]),
+		new Set(['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64), 'd'.repeat(64)]),
 	)
 	expect(bookRequests).toBe(0)
 

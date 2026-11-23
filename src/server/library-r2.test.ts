@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { Miniflare } from 'miniflare'
 
@@ -108,6 +109,62 @@ void test('lists and streams a book from Miniflare R2 with private headers', asy
 			"default-src 'none'; sandbox",
 		)
 		assert.equal(thumbnail.headers.get('Cache-Control'), 'private, no-store')
+		const generatedId = 'c'.repeat(64)
+		const png = new Uint8Array([
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d,
+		])
+		const writer = new ZipWriter(new Uint8ArrayWriter())
+		const text = (value: string) => new TextEncoder().encode(value)
+		await writer.add(
+			'META-INF/container.xml',
+			new Uint8ArrayReader(
+				text(
+					'<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+				),
+			),
+			{ level: 0 },
+		)
+		await writer.add(
+			'OEBPS/content.opf',
+			new Uint8ArrayReader(
+				text(
+					'<package><metadata><meta name="cover" content="cover"/></metadata><manifest><item id="cover" href="cover.png" media-type="image/png"/></manifest></package>',
+				),
+			),
+			{ level: 0 },
+		)
+		await writer.add('OEBPS/cover.png', new Uint8ArrayReader(png), {
+			level: 0,
+		})
+		const epub = await writer.close()
+		const generatedBook = {
+			id: generatedId,
+			name: 'Generated.epub',
+			format: 'epub',
+			size: epub.length,
+		}
+		await bucket.put(`books/${generatedId}.epub`, epub)
+		await bucket.put(
+			'library.json',
+			JSON.stringify({ books: [book, generatedBook] }),
+		)
+		const generatedRequest = () =>
+			new Request(`https://reader.example/api/books/${generatedId}/cover`, {
+				headers: { 'Cf-Access-Jwt-Assertion': token },
+			})
+
+		const generated = await handleLibrary(generatedRequest(), env)
+		assert.equal(generated.status, 200)
+		assert.equal(generated.headers.get('Content-Type'), 'image/png')
+		assert.deepEqual(new Uint8Array(await generated.arrayBuffer()), png)
+		const saved = await bucket.get(`covers/${generatedId}.png`)
+		assert.ok(saved)
+		assert.deepEqual(new Uint8Array(await saved.arrayBuffer()), png)
+
+		await bucket.delete(`books/${generatedId}.epub`)
+		const afterDelete = await handleLibrary(generatedRequest(), env)
+		assert.equal(afterDelete.status, 200)
+		assert.deepEqual(new Uint8Array(await afterDelete.arrayBuffer()), png)
 	} finally {
 		globalThis.fetch = originalFetch
 		await miniflare.dispose()

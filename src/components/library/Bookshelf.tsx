@@ -49,17 +49,15 @@ const BookshelfBook = ({
 					background: coverPalette[book.id.charCodeAt(0) % coverPalette.length],
 				}}
 			>
-				{book.hasCover && (
-					<img
-						className={styles.coverImage}
-						src={`/api/books/${encodeURIComponent(book.id)}/cover`}
-						alt=""
-						loading="lazy"
-						decoding="async"
-						data-loaded={coverLoaded}
-						onLoad={() => setCoverLoaded(true)}
-					/>
-				)}
+				<img
+					className={styles.coverImage}
+					src={`/api/books/${encodeURIComponent(book.id)}/cover`}
+					alt=""
+					loading="lazy"
+					decoding="async"
+					data-loaded={coverLoaded}
+					onLoad={() => setCoverLoaded(true)}
+				/>
 				<span className={styles.spine} />
 				<span className={styles.coverTitle}>
 					{book.name.replace(/\.(epub|zip)$/i, '')}
