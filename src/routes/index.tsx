@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 
-import { Library } from '#components/library/Library'
 import { useReaderApp } from '#components/providers/ReaderProvider'
 
 import styles from '#routes/index.module.css'
@@ -13,7 +12,6 @@ function Home() {
 	const navigate = useNavigate()
 	const [dragging, setDragging] = useState(false)
 	const input = useRef<HTMLInputElement>(null)
-	const cancelCloudDownload = useRef<(() => void) | null>(null)
 	const [message, setMessage] = useState('')
 	const accept = (selected?: File) => {
 		if (!selected) return
@@ -22,7 +20,6 @@ function Home() {
 			return
 		}
 		setMessage('')
-		cancelCloudDownload.current?.()
 		setFile(selected)
 	}
 	if (file) return null
@@ -40,14 +37,10 @@ function Home() {
 					物語の中へ。
 				</h1>
 				<p>
-					端末から選んだ本はアップロードされません。クラウドの本は非公開ストレージから読み込みます。
-				</p>
-				<p>
 					<a className={styles.bookshelfLink} href="/bookshelf">
 						本棚を開く
 					</a>
 				</p>
-				<Library cancelPending={cancelCloudDownload} />
 				<div
 					className={`${styles.drop} ${dragging ? styles.active : ''}`}
 					onDragOver={(event) => {

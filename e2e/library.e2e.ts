@@ -47,7 +47,7 @@ const routeLibrary = async (
 test('private ZIP opens in the reader and keeps settings', async ({ page }) => {
 	const archive = await makeZip(['page.png'])
 	await routeLibrary(page, archive)
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.getByRole('button', { name: /sample-fixture\.zip/ }).click()
 	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
