@@ -17,11 +17,14 @@ test('a local EPUB position survives reselection with a different filename', asy
 	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	const choose = async (name: string) =>
-		page.locator('input[type=file]').setInputFiles({
-			name,
-			mimeType: 'application/epub+zip',
-			buffer: bytes,
-		})
+		page
+			.getByRole('navigation', { name: 'メインナビゲーション' })
+			.locator('input[type=file]')
+			.setInputFiles({
+				name,
+				mimeType: 'application/epub+zip',
+				buffer: bytes,
+			})
 	await choose('first.epub')
 	const view = page.locator('[data-reader-page="primary"] foliate-view')
 	await expect
