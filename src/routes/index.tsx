@@ -191,7 +191,6 @@ function Home() {
 				<small>SHIORI · BROWSER READER</small>
 			</div>
 			<section className={styles.intro}>
-				<p className={styles.eyebrow}>あなたの本を、あなたの端末で。</p>
 				<h1>
 					ページをひらいて、
 					<br />

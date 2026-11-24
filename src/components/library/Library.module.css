@@ -68,7 +68,10 @@
 /* Must outrank the later .library button:not(.book) rule. */
 .library button.resume:not(.book) {
 	display: inline-flex;
+	flex-wrap: wrap;
 	align-items: baseline;
+	max-width: 100%;
+	overflow-wrap: anywhere;
 	gap: 8px;
 	margin: 4px 0 16px;
 	padding: 9px 16px;
@@ -78,9 +81,11 @@
 	font-weight: 600;
 }
 .resume span {
+	min-width: 0;
 	font-size: 12px;
 	font-weight: 400;
 	opacity: 0.85;
+	overflow-wrap: anywhere;
 }
 .library button.resume:not(.book):disabled {
 	cursor: wait;

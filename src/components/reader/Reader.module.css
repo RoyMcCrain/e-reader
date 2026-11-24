@@ -26,7 +26,11 @@
 	background: #f6f3eb;
 	transition: opacity 180ms ease;
 }
+.toolbar > button {
+	flex: none;
+}
 .toolbarActions {
+	flex: none;
 	display: flex;
 	align-items: center;
 	gap: 4px;
@@ -60,11 +64,16 @@
 	outline-offset: 2px;
 }
 .bookTitle {
+	flex: 1 1 0;
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	max-block-size: min(10rem, 55dvh);
+	overflow: auto;
+	overflow-wrap: anywhere;
 	color: #3b4b39;
+}
+.bookTitle:focus-visible {
+	outline: 2px solid #52694e;
+	outline-offset: 2px;
 }
 .footer {
 	position: absolute;
@@ -91,12 +100,13 @@
 .positionStatus {
 	grid-column: 1 / -1;
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: center;
 	gap: 8px;
 	min-height: 18px;
 	color: #465541;
-	font-size: 11px;
+	font-size: 0.875rem;
 }
 .positionStatus button {
 	border: 0;
@@ -114,7 +124,7 @@
 	align-items: center;
 	gap: 8px;
 	color: #465541;
-	font-size: 12px;
+	font-size: 0.875rem;
 	font-variant-numeric: tabular-nums;
 }
 .progressTrack {

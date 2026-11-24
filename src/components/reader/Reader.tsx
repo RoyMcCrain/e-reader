@@ -658,9 +658,21 @@ const ReaderControls = ({
 			<button aria-label="本を閉じる" title="本を閉じる" onClick={onClose}>
 				<Icon name="close" />
 			</button>
-			<span className={styles.bookTitle} title={title}>
-				{title}
-			</span>
+			{/* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- the title is a keyboard-scrollable region for very long names; the header buttons remain the only controls. */}
+			<section
+				className={styles.bookTitle}
+				aria-label={title}
+				tabIndex={0}
+				onKeyDownCapture={(event) => {
+					const { scrollHeight, clientHeight } = event.currentTarget
+					if (scrollHeight <= clientHeight) return
+					if (['PageDown', 'PageUp', ' '].includes(event.key))
+						event.stopPropagation()
+				}}
+			>
+				<span title={title}>{title}</span>
+			</section>
+			{/* oxlint-enable jsx-a11y/no-noninteractive-tabindex */}
 			<div className={styles.toolbarActions}>
 				<button
 					aria-label="目次"
