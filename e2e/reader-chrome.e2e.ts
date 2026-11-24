@@ -56,6 +56,7 @@ const makeZip = async () => {
 }
 
 const openEpub = async (page: import('@playwright/test').Page) => {
+	await page.clock.install()
 	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
@@ -93,6 +94,7 @@ const waitForFooterHidden = async (page: import('@playwright/test').Page) => {
 }
 
 const waitForHiddenChrome = async (page: import('@playwright/test').Page) => {
+	await page.clock.fastForward(30_000)
 	await expect
 		.poll(() => opacity(page, 'header'), { timeout: 2800, intervals: [20] })
 		.toBe('0')
@@ -239,10 +241,13 @@ test('EPUB chrome fades without moving the stage and document pointer activity r
 	await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height / 2)
 	await expect(header).toHaveCSS('opacity', '1')
 	await expect(footer).toHaveCSS('opacity', '1')
-	await page.waitForTimeout(1150)
+	await page.clock.fastForward(2_500)
 	await expect(footer).toHaveCSS('opacity', '0')
 	await expect(header).toHaveCSS('opacity', '1')
-	await expect.poll(() => opacity(page, 'header'), { timeout: 1000 }).toBe('0')
+	await page.clock.fastForward(25_000)
+	await expect(header).toHaveCSS('opacity', '1')
+	await page.clock.fastForward(5_000)
+	await expect(header).toHaveCSS('opacity', '0')
 	await expect.poll(() => epubContent(page)).toBe(content)
 	expect(await stage.boundingBox()).toEqual(bounds)
 
@@ -252,7 +257,7 @@ test('EPUB chrome fades without moving the stage and document pointer activity r
 	const close = page.getByRole('button', { name: '本を閉じる' })
 	await close.focus()
 	await expect(close).toBeFocused()
-	await page.waitForTimeout(2400)
+	await page.clock.fastForward(31_000)
 	await expect(header).toHaveCSS('opacity', '1')
 	await expect(footer).toHaveCSS('opacity', '1')
 })
@@ -269,7 +274,7 @@ test('TOC focus pins chrome; settings return clears the pin and idle hiding resu
 	const dialog = page.getByRole('dialog', { name: '目次', exact: true })
 	await expect(dialog).toBeVisible()
 	await dialog.evaluate((element) => element.focus())
-	await page.waitForTimeout(2400)
+	await page.clock.fastForward(31_000)
 	await expect(header).toHaveCSS('opacity', '1')
 	await expect(
 		page.locator('footer', {

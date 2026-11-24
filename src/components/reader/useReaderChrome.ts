@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { READER_ACTIVITY_EVENT, READER_TURN_EVENT } from '#lib/reader/input'
 
 const FOOTER_IDLE_DELAY = 1000
-const HEADER_IDLE_DELAY = 2000
+const HEADER_IDLE_DELAY = 30_000
 
 interface ReaderChromeOptions {
 	active: boolean
