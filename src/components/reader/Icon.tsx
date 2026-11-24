@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react'
 
 const paths: Record<string, ReactNode> = {
+	up: (
+		<>
+			<path d="M12 19V5" />
+			<path d="m5 12 7-7 7 7" />
+		</>
+	),
 	close: (
 		<>
 			<path d="m6 6 12 12M18 6 6 18" />
