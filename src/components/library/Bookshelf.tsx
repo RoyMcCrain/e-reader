@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
+import { Icon } from '#components/reader/Icon'
 import { filterBooks, groupBooks, sortBooks } from '#lib/library/bookshelf'
 import type { BookSort } from '#lib/library/bookshelf'
 import type { CloudBook } from '#lib/library/types'
@@ -480,6 +481,17 @@ const BookshelfContent = (props: BookshelfContentProps) => {
 	const { books, filtered, query, setQuery, returnFromSeries } = props
 	const ready = !props.loading && !props.listError
 	const scroller = useRef<HTMLElement>(null)
+	const [showBackToTop, setShowBackToTop] = useState(false)
+	const backToTop = () => {
+		const element = scroller.current
+		if (!element) return
+		// Focus the scroll start first so keyboard focus survives the button hiding.
+		element.focus({ preventScroll: true })
+		const reduceMotion = window.matchMedia(
+			'(prefers-reduced-motion: reduce)',
+		).matches
+		element.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' })
+	}
 	useLayoutEffect(() => {
 		// Any other entry to the shelf drops a stale offset.
 		if (!returnFromSeries) {
@@ -511,7 +523,11 @@ const BookshelfContent = (props: BookshelfContentProps) => {
 			<main
 				ref={scroller}
 				className={styles.page}
+				tabIndex={-1}
 				onClickCapture={rememberSeriesOpen}
+				onScroll={(event) =>
+					setShowBackToTop(event.currentTarget.scrollTop > 320)
+				}
 			>
 				<BookshelfHeader ready={ready} query={query} setQuery={setQuery} />
 				<div className={styles.intro}>
@@ -533,6 +549,16 @@ const BookshelfContent = (props: BookshelfContentProps) => {
 						sort={props.sort}
 						setSort={props.setSort}
 					/>
+					{showBackToTop && (
+						<button
+							type="button"
+							className={styles.backToTop}
+							aria-label="先頭へ戻る"
+							onClick={backToTop}
+						>
+							<Icon name="up" />
+						</button>
+					)}
 				</footer>
 			)}
 		</div>

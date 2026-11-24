@@ -646,3 +646,48 @@ test('recently uploaded covers open the reader directly and close back to the sh
 	await expect(page.getByRole('heading', { name: '本棚' })).toBeVisible()
 	await expect(footer).toBeVisible()
 })
+
+test('long shelf returns to the top with a back-to-top button at phone width', async ({
+	page,
+}) => {
+	const shelf = Array.from({ length: 48 }, (_, index) => ({
+		id: (index + 1).toString(16).padStart(64, '0'),
+		name: `第${(index % 3) + 1}巻.epub`,
+		format: 'epub',
+		size: 10,
+		series: `長いシリーズ${Math.floor(index / 3) + 1}`,
+		uploadedAt: '2024-01-01T00:00:00Z',
+	}))
+	await mockLibrary(page, shelf)
+	await page.setViewportSize({ width: 390, height: 844 })
+	await page.emulateMedia({ reducedMotion: 'reduce' })
+	await page.goto('/bookshelf')
+	const scroller = page.getByRole('main')
+	const backToTop = page.getByRole('button', { name: '先頭へ戻る' })
+	const heading = page.getByRole('heading', { name: '本棚', exact: true })
+	const footer = page.getByRole('contentinfo', {
+		name: '本棚の絞り込みと表示設定',
+	})
+	await expect(footer).toBeVisible()
+	await expect(backToTop).toBeHidden()
+
+	await scroller.evaluate((element) => {
+		element.scrollTop = element.scrollHeight
+	})
+	await expect(backToTop).toBeVisible()
+	const footerBox = await footer.boundingBox()
+	const buttonBox = await backToTop.boundingBox()
+	expect(footerBox).not.toBeNull()
+	expect(buttonBox).not.toBeNull()
+	expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(footerBox!.y)
+
+	const url = page.url()
+	await backToTop.click()
+	await expect
+		.poll(() => scroller.evaluate((element) => element.scrollTop))
+		.toBe(0)
+	await expect(heading).toBeInViewport()
+	await expect(backToTop).toBeHidden()
+	await expect(scroller).toBeFocused()
+	expect(page.url()).toBe(url)
+})
