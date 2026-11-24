@@ -63,14 +63,18 @@ test('ZIP progress follows visible pages, remaining pages, and completion', asyn
 	)
 	await revealReader(page)
 	await page.getByRole('button', { name: '本を閉じる' }).click()
-	await page.locator('input[type=file]').setInputFiles({
-		name: 'synthetic.zip',
-		mimeType: 'application/zip',
-		buffer,
-	})
+	await page
+		.getByRole('navigation', { name: 'メインナビゲーション' })
+		.locator('input[type=file]')
+		.setInputFiles({
+			name: 'synthetic.zip',
+			mimeType: 'application/zip',
+			buffer,
+		})
 	const reopened = page.getByRole('progressbar', { name: '読書の進捗' })
+	// Reselecting the same file restores the saved position instead of restarting.
 	await expect(reopened).toHaveAttribute(
 		'aria-valuetext',
-		'1/6、17%、あと5ページ',
+		'4–5/6、83%、あと1ページ',
 	)
 })

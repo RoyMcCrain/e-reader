@@ -401,11 +401,14 @@ test.describe('touch chrome', () => {
 		})
 		await page.goto('/bookshelf')
 		await page.waitForLoadState('networkidle')
-		await page.locator('input[type=file]').setInputFiles({
-			name: 'synthetic.zip',
-			mimeType: 'application/zip',
-			buffer: await makeZip(),
-		})
+		await page
+			.getByRole('navigation', { name: 'メインナビゲーション' })
+			.locator('input[type=file]')
+			.setInputFiles({
+				name: 'synthetic.zip',
+				mimeType: 'application/zip',
+				buffer: await makeZip(),
+			})
 		await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
 		await waitForHiddenChrome(page)
 		await page.touchscreen.tap(195, 422)
