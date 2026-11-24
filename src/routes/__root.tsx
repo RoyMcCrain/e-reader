@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
+import { LastSessionResume } from '#components/library/LastSessionResume'
 import {
 	ReaderProvider,
 	useReaderApp,
@@ -67,6 +68,7 @@ const AppShell = () => {
 					/>
 				</div>
 			)}
+			{!file && active && <LastSessionResume onOpen={setFile} />}
 			<div hidden={Boolean(file && from)}>
 				<Outlet />
 			</div>
