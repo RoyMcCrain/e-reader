@@ -51,13 +51,18 @@ const makeZip = async () => {
 const coverLinks = (region: Locator) =>
 	region.getByRole('link', { name: /、(EPUB|ZIP)$/ })
 
-const mockLibrary = async (page: Page, list: object[], archive?: Buffer) => {
+const mockLibrary = async (
+	page: Page,
+	list: object[],
+	archive?: Buffer,
+	positions: object[] = [],
+) => {
 	const requests = { books: 0 }
 	await page.route('**/api/reading-positions', (route) =>
 		route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ positions: [] }),
+			body: JSON.stringify({ positions }),
 		}),
 	)
 	await page.route('**/api/books', (route) =>
@@ -480,6 +485,60 @@ test('bookshelf omits the recently-read shelf and links to the history page', as
 	await expect(
 		all.getByRole('list', { name: 'シリーズ未設定の本' }).getByRole('link'),
 	).toHaveCount(10)
+})
+
+test('series detail shows the last read volume and resumes it in the reader', async ({
+	page,
+}) => {
+	const archive = await makeZip()
+	const seriesName = '星の旅'
+	const shelf = [
+		{
+			id: '1'.repeat(64),
+			name: '巻10.zip',
+			format: 'zip',
+			size: archive.length,
+			series: seriesName,
+		},
+		{
+			id: '2'.repeat(64),
+			name: '巻2.zip',
+			format: 'zip',
+			size: archive.length,
+			series: seriesName,
+		},
+		{
+			id: '3'.repeat(64),
+			name: '別作品.zip',
+			format: 'zip',
+			size: archive.length,
+			series: '月の森',
+		},
+	]
+	const positions = [
+		{ bookId: '2'.repeat(64), updatedAt: 1_767_225_600 },
+		{ bookId: '1'.repeat(64), updatedAt: 1_767_229_200 },
+		{ bookId: '3'.repeat(64), updatedAt: 1_767_232_800 },
+	]
+	await mockLibrary(page, shelf, archive, positions)
+	await page.goto(`/bookshelf/series?name=${encodeURIComponent(seriesName)}`)
+	const resume = page.getByRole('button', { name: '続きを読む、巻10.zip' })
+	await expect(resume).toBeVisible()
+	await expect(page.getByText('別作品')).toHaveCount(0)
+	const list = page.getByRole('list', { name: `${seriesName}の収録本` })
+	const current = list.locator('li[aria-current="true"]')
+	await expect(current).toHaveCount(1)
+	await expect(current).toContainText('巻10')
+	await resume.click()
+	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
+
+	// Reading another volume elsewhere, then closing the reader, refreshes the mark.
+	positions[0] = { bookId: '2'.repeat(64), updatedAt: 1_767_240_000 }
+	await page.getByRole('button', { name: '本を閉じる' }).click()
+	await expect(
+		page.getByRole('button', { name: '続きを読む、巻2.zip' }),
+	).toBeVisible()
+	await expect(current).toContainText('巻2')
 })
 
 test('returns to the shelf scroll position after a series detail round trip', async ({

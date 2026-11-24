@@ -4,6 +4,7 @@ import {
 	filterBooks,
 	formatReadAt,
 	groupBooks,
+	latestReadBook,
 	selectHistoryEntries,
 	sortBooks,
 } from './bookshelf'
@@ -198,6 +199,17 @@ describe('bookshelf helpers', () => {
 				entry.kind === 'book' ? entry.book.id : entry.series,
 			),
 		).toEqual(['a', 'z'])
+	})
+
+	test('picks the latest read volume of a series, ignoring other series and unread volumes', () => {
+		const series = books.slice(0, 2)
+		expect(latestReadBook(series, { a: 50, b: 50 })?.book.id).toBe('a')
+		expect(latestReadBook(series, { a: 10, b: 60 })).toMatchObject({
+			book: { id: 'b' },
+			readAt: 60,
+		})
+		expect(latestReadBook(series, { a: 0, c: 99 })).toBeUndefined()
+		expect(latestReadBook(series, {})).toBeUndefined()
 	})
 
 	test('formats the read time for Japanese display and rejects invalid input', () => {

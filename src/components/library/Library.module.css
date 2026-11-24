@@ -65,6 +65,46 @@
 	overflow-wrap: anywhere;
 	font-size: 13px;
 }
+/* Must outrank the later .library button:not(.book) rule. */
+.library button.resume:not(.book) {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 8px;
+	margin: 4px 0 16px;
+	padding: 9px 16px;
+	border-color: #52694e;
+	background: #52694e;
+	color: #fff;
+	font-weight: 600;
+}
+.resume span {
+	font-size: 12px;
+	font-weight: 400;
+	opacity: 0.85;
+}
+.library button.resume:not(.book):disabled {
+	cursor: wait;
+	opacity: 0.6;
+}
+.latest {
+	position: relative;
+}
+.library .latest button {
+	border-color: #52694e;
+	box-shadow: 0 0 0 2px #52694e;
+}
+/* Bookmark ribbon hanging over the last-read cover. */
+.latest::after {
+	content: '';
+	position: absolute;
+	top: -4px;
+	right: 14px;
+	width: 14px;
+	height: 28px;
+	background: #c0563f;
+	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+	pointer-events: none;
+}
 .metadata {
 	color: #777a72;
 	font-size: 11px;

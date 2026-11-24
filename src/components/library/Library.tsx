@@ -5,8 +5,9 @@ import type { RefObject } from 'react'
 import { Bookshelf, BookshelfBook } from '#components/library/Bookshelf'
 import { History } from '#components/library/History'
 import { useReaderApp } from '#components/providers/ReaderProvider'
-import { sortBooks } from '#lib/library/bookshelf'
+import { latestReadBook, sortBooks } from '#lib/library/bookshelf'
 import { parseAuthorName, validBookMetadata } from '#lib/library/metadata'
+import { fetchRecency } from '#lib/library/recency'
 import type { CloudBook } from '#lib/library/types'
 
 import styles from '#components/library/Library.module.css'
@@ -224,14 +225,19 @@ const SeriesBookList = ({
 	listError,
 	busyId,
 	openBook,
-}: SeriesDetailsProps) => {
+	latest,
+}: SeriesDetailsProps & { latest?: ReturnType<typeof latestReadBook> }) => {
 	const title = seriesName ?? 'シリーズ未設定'
 	if (loading || listError) return null
 	if (!books.length) return <p>このシリーズの本は見つかりません。</p>
 	return (
 		<ul className={styles.books} aria-label={`${title}の収録本`}>
 			{sortBooks(books, 'title').map((book) => (
-				<li key={book.id}>
+				<li
+					key={book.id}
+					className={book.id === latest?.book.id ? styles.latest : undefined}
+					aria-current={book.id === latest?.book.id ? 'true' : undefined}
+				>
 					<BookshelfBook book={book} busyId={busyId} openBook={openBook} />
 				</li>
 			))}
@@ -260,6 +266,65 @@ const SeriesBackLink = ({ from }: { from?: SeriesFrom }) =>
 		</Link>
 	)
 
+const loadRecency = (
+	requestId: { current: number },
+	setRecency: (values: Record<string, number>) => void,
+) => {
+	requestId.current += 1
+	const current = requestId.current
+	// Keep the previous mark while refetching or after a failed refetch.
+	void fetchRecency().then((values) => {
+		if (values && current === requestId.current) setRecency(values)
+	})
+}
+
+// Loads read positions on mount and again after the reader closes.
+const useLatestRead = (books: CloudBook[], ready: boolean) => {
+	const { file } = useReaderApp()
+	const [recency, setRecency] = useState<Record<string, number>>()
+	const requestId = useRef(0)
+	const wasOpen = useRef(false)
+	useEffect(() => {
+		loadRecency(requestId, setRecency)
+		return () => {
+			requestId.current += 1
+		}
+	}, [])
+	useEffect(() => {
+		if (file !== undefined) {
+			wasOpen.current = true
+			return
+		}
+		if (!wasOpen.current) return
+		wasOpen.current = false
+		loadRecency(requestId, setRecency)
+	}, [file])
+	return ready && recency ? latestReadBook(books, recency) : undefined
+}
+
+const SeriesProgress = ({
+	latest,
+	busyId,
+	openBook,
+}: {
+	latest?: ReturnType<typeof latestReadBook>
+	busyId: string
+	openBook: (book: CloudBook) => void
+}) => {
+	if (!latest) return null
+	return (
+		<button
+			className={styles.resume}
+			aria-label={`続きを読む、${latest.book.name}`}
+			disabled={Boolean(busyId)}
+			onClick={() => openBook(latest.book)}
+		>
+			続きを読む
+			<span>{latest.book.name.replace(/\.(epub|zip)$/i, '')}</span>
+		</button>
+	)
+}
+
 const SeriesDetails = (props: SeriesDetailsProps) => {
 	const {
 		books,
@@ -275,19 +340,26 @@ const SeriesDetails = (props: SeriesDetailsProps) => {
 	const title = seriesName ?? 'シリーズ未設定'
 	const selected = books.filter((book) => book.series === seriesName)
 	const authors = seriesName === undefined ? '' : authorLabel(selected)
+	const ready = !loading && !listError
+	const latest = useLatestRead(selected, ready)
 	return (
 		<main className={`${styles.library} ${styles.series}`}>
 			<SeriesBackLink from={seriesFrom} />
 			<h1>{title}</h1>
 			{authors && <p>著者: {authors}</p>}
-			{!loading && !listError && <p>{selected.length} 冊</p>}
+			{ready && <p>{selected.length} 冊</p>}
+			<SeriesProgress
+				latest={latest}
+				busyId={busyId}
+				openBook={props.openBook}
+			/>
 			<LibraryState
 				loading={loading}
 				listError={listError}
 				books={books}
 				retry={retry}
 			/>
-			<SeriesBookList {...props} books={selected} />
+			<SeriesBookList {...props} books={selected} latest={latest} />
 			{busyId && <output>本をダウンロードしています…</output>}
 			{downloadError && (
 				<p role="alert" className={styles.error}>
