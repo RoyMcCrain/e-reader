@@ -163,7 +163,7 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 		seriesHeading.getByRole('link', { name: /星の旅/ }),
 	).toHaveAttribute(
 		'href',
-		'/bookshelf/series?name=%E6%98%9F%E3%81%AE%E6%97%85',
+		'/bookshelf/series?name=%E6%98%9F%E3%81%AE%E6%97%85&from=%2Fbookshelf',
 	)
 	const row = all.getByRole('list', { name: '星の旅の本' })
 	const volumes = row.getByRole('link')
@@ -423,7 +423,7 @@ test('series detail keeps exact names, volumes and reader return through direct 
 			.getByRole('list', { name: `${seriesName}の収録本` })
 			.getByRole('button'),
 	).toHaveCount(2)
-	await page.getByRole('link', { name: '本棚に戻る' }).click()
+	await page.getByRole('link', { name: '戻る' }).click()
 	await expect(page).toHaveURL('/bookshelf?from=series')
 	await expect(page.getByRole('heading', { name: '本棚' })).toBeVisible()
 
@@ -431,7 +431,7 @@ test('series detail keeps exact names, volumes and reader return through direct 
 	await expect(
 		page.getByText('このシリーズの本は見つかりません。'),
 	).toBeVisible()
-	await expect(page.getByRole('link', { name: '本棚に戻る' })).toHaveAttribute(
+	await expect(page.getByRole('link', { name: '戻る' })).toHaveAttribute(
 		'href',
 		'/bookshelf?from=series',
 	)
@@ -508,7 +508,7 @@ test('returns to the shelf scroll position after a series detail round trip', as
 
 	await seriesLink.click()
 	await expect(page).toHaveURL(/\/bookshelf\/series\?name=/)
-	await page.getByRole('link', { name: '本棚に戻る' }).click()
+	await page.getByRole('link', { name: '戻る' }).click()
 	await expect(page).toHaveURL('/bookshelf?from=series')
 	await expect(seriesLink).toBeVisible()
 	await expect

@@ -208,7 +208,7 @@ export const refreshPositionSession = async (
 			status:
 				cause instanceof Error && cause.message === 'auth'
 					? 'auth'
-					: 'クラウドの位置を取得できません。',
+					: '読書位置を取得できません。',
 		}
 	}
 }
