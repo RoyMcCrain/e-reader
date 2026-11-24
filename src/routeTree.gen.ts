@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BookshelfRouteImport } from './routes/bookshelf'
 import { Route as ConfigRouteImport } from './routes/config'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as ApiBooksRouteImport } from './routes/api.books'
 import { Route as ApiReadingPositionsRouteImport } from './routes/api.reading-positions'
 import { Route as BookshelfSeriesRouteImport } from './routes/bookshelf_.series'
@@ -32,6 +33,11 @@ const BookshelfRoute = BookshelfRouteImport.update({
 const ConfigRoute = ConfigRouteImport.update({
   id: '/config',
   path: '/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiBooksRoute = ApiBooksRouteImport.update({
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/bookshelf': typeof BookshelfRoute
   '/config': typeof ConfigRoute
+  '/history': typeof HistoryRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/reading-positions': typeof ApiReadingPositionsRouteWithChildren
   '/bookshelf/series': typeof BookshelfSeriesRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/bookshelf': typeof BookshelfRoute
   '/config': typeof ConfigRoute
+  '/history': typeof HistoryRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/reading-positions': typeof ApiReadingPositionsRouteWithChildren
   '/bookshelf/series': typeof BookshelfSeriesRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/bookshelf': typeof BookshelfRoute
   '/config': typeof ConfigRoute
+  '/history': typeof HistoryRoute
   '/api/books': typeof ApiBooksRouteWithChildren
   '/api/reading-positions': typeof ApiReadingPositionsRouteWithChildren
   '/bookshelf_/series': typeof BookshelfSeriesRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/bookshelf'
     | '/config'
+    | '/history'
     | '/api/books'
     | '/api/reading-positions'
     | '/bookshelf/series'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/bookshelf'
     | '/config'
+    | '/history'
     | '/api/books'
     | '/api/reading-positions'
     | '/bookshelf/series'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/bookshelf'
     | '/config'
+    | '/history'
     | '/api/books'
     | '/api/reading-positions'
     | '/bookshelf_/series'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BookshelfRoute: typeof BookshelfRoute
   ConfigRoute: typeof ConfigRoute
+  HistoryRoute: typeof HistoryRoute
   ApiBooksRoute: typeof ApiBooksRouteWithChildren
   ApiReadingPositionsRoute: typeof ApiReadingPositionsRouteWithChildren
   BookshelfSeriesRoute: typeof BookshelfSeriesRoute
@@ -165,6 +178,13 @@ declare module '@tanstack/react-router' {
       path: '/config'
       fullPath: '/config'
       preLoaderRoute: typeof ConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/books': {
@@ -251,6 +271,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BookshelfRoute: BookshelfRoute,
   ConfigRoute: ConfigRoute,
+  HistoryRoute: HistoryRoute,
   ApiBooksRoute: ApiBooksRouteWithChildren,
   ApiReadingPositionsRoute: ApiReadingPositionsRouteWithChildren,
   BookshelfSeriesRoute: BookshelfSeriesRoute,

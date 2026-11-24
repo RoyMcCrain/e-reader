@@ -8,7 +8,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
 	test(`EPUB ${direction} reflow retains a mid-chapter reading point`, async ({
 		page,
 	}) => {
-		await page.goto('/')
+		await page.goto('/bookshelf')
 		await page.waitForLoadState('networkidle')
 		await page.locator('input[type=file]').setInputFiles({
 			name: `${direction}.epub`,

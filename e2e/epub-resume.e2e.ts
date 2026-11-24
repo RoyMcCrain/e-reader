@@ -14,7 +14,7 @@ test('a local EPUB position survives reselection with a different filename', asy
 		route.fulfill({ status: 503, json: { error: 'offline' } }),
 	)
 	const bytes = Buffer.from(await makePositionEpub('ltr'))
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	const choose = async (name: string) =>
 		page.locator('input[type=file]').setInputFiles({

@@ -20,7 +20,7 @@ test('ZIP progress follows visible pages, remaining pages, and completion', asyn
 	for (let index = 1; index <= 6; index++)
 		await writer.add(`${index}.png`, new Uint8ArrayReader(pixel))
 	const buffer = Buffer.from(await (await writer.close()).arrayBuffer())
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'synthetic.zip',
@@ -33,7 +33,11 @@ test('ZIP progress follows visible pages, remaining pages, and completion', asyn
 		'aria-valuetext',
 		'1/6、17%、あと5ページ',
 	)
-	await expect(page.locator('footer')).toHaveText('1/6')
+	await expect(
+		page.locator('footer', {
+			has: page.getByRole('progressbar', { name: '読書の進捗' }),
+		}),
+	).toHaveText('1/6')
 	await expect(page.getByTitle('1/6、17%、あと5ページ')).toBeVisible()
 	await turnPage(page, true)
 	await expect(progress).toHaveAttribute(
@@ -41,7 +45,11 @@ test('ZIP progress follows visible pages, remaining pages, and completion', asyn
 		'2–3/6、50%、あと3ページ',
 	)
 	await expect(page.getByTitle('2–3/6、50%、あと3ページ')).toBeVisible()
-	await expect(page.locator('footer')).toHaveText('2–3/6')
+	await expect(
+		page.locator('footer', {
+			has: page.getByRole('progressbar', { name: '読書の進捗' }),
+		}),
+	).toHaveText('2–3/6')
 	await turnPage(page, true)
 	await turnPage(page, true)
 	await expect(progress).toHaveAttribute(

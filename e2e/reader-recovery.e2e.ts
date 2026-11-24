@@ -41,7 +41,7 @@ test('a corrupt image alerts and page input recovers on a valid page', async ({
 	page,
 }) => {
 	await forceSingleSpread(page)
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'comic.zip',

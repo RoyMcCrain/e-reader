@@ -6,15 +6,18 @@ export const revealReader = async (page: Page) => {
 	await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
 }
 
+const readerChrome = (page: Page) =>
+	page.getByRole('region', { name: '読書画面' })
+
 export const expectChromeHiddenImmediately = async (page: Page) => {
 	await expect
 		.poll(
 			() =>
 				Promise.all([
-					page
+					readerChrome(page)
 						.locator('header')
 						.evaluate((element) => getComputedStyle(element).opacity),
-					page
+					readerChrome(page)
 						.locator('footer')
 						.evaluate((element) => getComputedStyle(element).opacity),
 				]),
@@ -28,6 +31,6 @@ export const turnPage = async (page: Page, next: boolean) => {
 		page.getByRole('progressbar', { name: '読書の進捗' }),
 	).toBeVisible()
 	await revealReader(page)
-	await page.locator('header span[title]').click()
+	await readerChrome(page).locator('header span[title]').click()
 	await page.keyboard.press(next ? 'PageDown' : 'PageUp')
 }

@@ -2,18 +2,13 @@ import { Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
-import {
-	filterBooks,
-	groupBooks,
-	selectRecentBooks,
-	sortBooks,
-} from '#lib/library/bookshelf'
+import { filterBooks, groupBooks, sortBooks } from '#lib/library/bookshelf'
 import type { BookSort } from '#lib/library/bookshelf'
 import type { CloudBook } from '#lib/library/types'
 
 import styles from '#components/library/Bookshelf.module.css'
 
-interface BookshelfProps {
+export interface BookshelfProps {
 	books: CloudBook[]
 	loading: boolean
 	listError: 'auth' | 'offline' | 'unavailable' | ''
@@ -21,48 +16,6 @@ interface BookshelfProps {
 	busyId: string
 	openBook: (book: CloudBook) => void
 	downloadError: string
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const parsePosition = (item: unknown) => {
-	if (!isRecord(item)) return undefined
-	const { bookId, updatedAt } = item
-	if (
-		typeof bookId !== 'string' ||
-		typeof updatedAt !== 'number' ||
-		!Number.isSafeInteger(updatedAt) ||
-		updatedAt < 0
-	)
-		return undefined
-	return [bookId, updatedAt] as const
-}
-
-const parseRecency = (data: unknown) => {
-	if (!isRecord(data) || !Array.isArray(data.positions)) return undefined
-	const values: Record<string, number> = {}
-	for (const item of data.positions as unknown[]) {
-		const position = parsePosition(item)
-		if (position) values[position[0]] = position[1]
-	}
-	return values
-}
-
-const fetchRecency = async () => {
-	try {
-		const response = await fetch('/api/reading-positions', {
-			credentials: 'same-origin',
-		})
-		if (!response.ok) {
-			// Unread bodies keep network requests in flight and block networkidle.
-			await response.body?.cancel()
-			return undefined
-		}
-		return parseRecency(await response.json())
-	} catch {
-		return undefined
-	}
 }
 
 const coverPalette = [
@@ -78,7 +31,7 @@ interface BookActions {
 	openBook: (book: CloudBook) => void
 }
 
-const BookCover = ({ book }: { book: CloudBook }) => {
+export const BookCover = ({ book }: { book: CloudBook }) => {
 	const [coverLoaded, setCoverLoaded] = useState(false)
 	return (
 		<>
@@ -123,7 +76,7 @@ export const BookshelfBook = ({
 	</button>
 )
 
-const SeriesBook = ({ book }: { book: CloudBook }) => (
+export const SeriesBook = ({ book }: { book: CloudBook }) => (
 	<Link
 		className={styles.book}
 		to="/bookshelf/series"
@@ -192,33 +145,34 @@ const FilterControls = ({
 	)
 }
 
-const RecentlyReadBooks = ({
-	books,
-	recency,
-	...actions
-}: BookActions & { books: CloudBook[]; recency: Record<string, number> }) => {
-	const recent = selectRecentBooks(books, recency, 8)
-	const hasHistory = Object.keys(recency).length > 0
+export const LocalFileButton = () => {
+	const { setFile } = useReaderApp()
+	const input = useRef<HTMLInputElement>(null)
+	const [message, setMessage] = useState('')
 	return (
-		<section className={styles.section} aria-labelledby="recently-read-heading">
-			<div className={styles.sectionHead}>
-				<h2 id="recently-read-heading">最近読んだ本</h2>
-				<span>最大8冊</span>
-			</div>
-			{recent.length ? (
-				<div className={styles.recent}>
-					{recent.map((book) => (
-						<BookshelfBook key={book.id} book={book} {...actions} />
-					))}
-				</div>
-			) : (
-				<p>
-					{hasHistory
-						? '条件に合う本はありません。'
-						: 'まだ読んだ本がありません。'}
-				</p>
-			)}
-		</section>
+		<>
+			<button type="button" onClick={() => input.current?.click()}>
+				ファイルを開く
+			</button>
+			<input
+				ref={input}
+				type="file"
+				accept=".epub,.zip,application/epub+zip,application/zip"
+				hidden
+				onChange={(event) => {
+					const selected = event.currentTarget.files?.[0]
+					event.currentTarget.value = ''
+					if (!selected) return
+					if (!/\.(epub|zip)$/i.test(selected.name)) {
+						setMessage('EPUBまたは画像ZIPを選んでください。')
+						return
+					}
+					setMessage('')
+					setFile(selected)
+				}}
+			/>
+			{message && <span role="alert">{message}</span>}
+		</>
 	)
 }
 
@@ -370,7 +324,6 @@ const AllBooks = (props: AllBooksProps) => (
 
 interface BookshelfContentProps extends BookshelfProps {
 	filtered: CloudBook[]
-	recency: Record<string, number> | undefined
 	query: string
 	setQuery: (value: string) => void
 	format: 'all' | 'epub' | 'zip'
@@ -379,7 +332,7 @@ interface BookshelfContentProps extends BookshelfProps {
 	setSort: (value: BookSort) => void
 }
 
-const LibraryStateMessage = ({
+export const LibraryStateMessage = ({
 	loading,
 	listError,
 	retry,
@@ -414,7 +367,6 @@ const BookshelfResults = ({
 	openBook,
 	downloadError,
 	filtered,
-	recency,
 	sort,
 }: BookshelfContentProps) => (
 	<>
@@ -426,14 +378,6 @@ const BookshelfResults = ({
 		{!loading && !listError && (
 			<>
 				<div className={styles.shelves}>
-					{recency !== undefined && (
-						<RecentlyReadBooks
-							books={filtered}
-							recency={recency}
-							busyId={busyId}
-							openBook={openBook}
-						/>
-					)}
 					<AllBooks books={books} filtered={filtered} sort={sort} />
 					<RecentBooks books={filtered} busyId={busyId} openBook={openBook} />
 				</div>
@@ -466,7 +410,8 @@ const BookshelfHeader = ({ ready, query, setQuery }: BookshelfHeaderProps) => {
 					<span>BOOKSHELF</span>
 				</a>
 				<nav aria-label="メインナビゲーション">
-					<a href="/">ファイルから読む</a>
+					<Link to="/history">履歴</Link>
+					<LocalFileButton />
 					<Link to="/config" search={{ from: '/bookshelf', name: undefined }}>
 						設定
 					</Link>
@@ -549,26 +494,6 @@ const BookshelfContent = (props: BookshelfContentProps) => {
 
 export const Bookshelf = (props: BookshelfProps) => {
 	const { books } = props
-	const { file } = useReaderApp()
-	const [recency, setRecency] = useState<Record<string, number>>()
-	const previousFile = useRef(file)
-	const requestId = useRef(0)
-	const mounted = useRef(false)
-	useEffect(() => {
-		const firstRender = !mounted.current
-		const returnedToShelf =
-			previousFile.current !== undefined && file === undefined
-		mounted.current = true
-		previousFile.current = file
-		if (!firstRender && !returnedToShelf) return
-		requestId.current += 1
-		const current = requestId.current
-		setRecency(undefined)
-		void fetchRecency().then((values) => {
-			if (current !== requestId.current) return
-			if (values !== undefined) setRecency(values)
-		})
-	}, [file])
 	const [query, setQuery] = useState('')
 	const [format, setFormat] = useState<'all' | 'epub' | 'zip'>('all')
 	const [sort, setSort] = useState<BookSort>('series')
@@ -579,7 +504,6 @@ export const Bookshelf = (props: BookshelfProps) => {
 	return (
 		<BookshelfContent
 			{...props}
-			recency={recency}
 			filtered={filtered}
 			query={query}
 			setQuery={setQuery}

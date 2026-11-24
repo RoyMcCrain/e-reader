@@ -36,7 +36,7 @@ test('a ZIP swipe animates the incoming page in its travel direction', async ({
 	await writer.add('one.png', new Uint8ArrayReader(pixel))
 	await writer.add('two.png', new Uint8ArrayReader(pixel))
 	const archive = new Uint8Array(await (await writer.close()).arrayBuffer())
-	await page.goto('/')
+	await page.goto('/bookshelf')
 	await page.waitForLoadState('networkidle')
 	await page.locator('input[type=file]').setInputFiles({
 		name: 'comic.zip',
@@ -44,8 +44,16 @@ test('a ZIP swipe animates the incoming page in its travel direction', async ({
 		buffer: Buffer.from(archive),
 	})
 	await expect(page.getByRole('img', { name: '画像 1 / 2' })).toBeVisible()
-	await expect(page.locator('header')).toHaveCSS('opacity', '1')
-	await expect(page.locator('footer')).toHaveCSS('opacity', '1')
+	await expect(
+		page.locator('header', {
+			has: page.getByRole('button', { name: '本を閉じる' }),
+		}),
+	).toHaveCSS('opacity', '1')
+	await expect(
+		page.locator('footer', {
+			has: page.getByRole('progressbar', { name: '読書の進捗' }),
+		}),
+	).toHaveCSS('opacity', '1')
 	const cdp = await page.context().newCDPSession(page)
 	await cdp.send('Input.dispatchTouchEvent', {
 		type: 'touchStart',

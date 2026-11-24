@@ -10,7 +10,9 @@ import styles from '#routes/config.module.css'
 export const Route = createFileRoute('/config')({
 	validateSearch: (search: Record<string, unknown>) => ({
 		from:
-			search.from === '/bookshelf' || search.from === '/bookshelf/series'
+			search.from === '/bookshelf' ||
+			search.from === '/bookshelf/series' ||
+			search.from === '/history'
 				? search.from
 				: undefined,
 		name:
