@@ -250,6 +250,9 @@
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
 	gap: 1.5rem 1.1rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
 }
 .group {
 	margin-top: 1.5rem;
@@ -346,7 +349,6 @@
 		0 1px 2px rgb(37 42 37 / 0.18),
 		0 8px 16px -10px rgb(37 42 37 / 0.45),
 		inset 4px 0 6px #ffffff1f;
-	transition: transform 0.15s ease;
 }
 .coverImage {
 	position: absolute;
@@ -395,9 +397,6 @@
 	color: var(--ink);
 	overflow-wrap: anywhere;
 }
-.book:hover .cover {
-	transform: translateY(-2px);
-}
 .book:focus-visible,
 .filters :focus-visible,
 .searchPanel :focus-visible,
@@ -409,11 +408,6 @@
 .book:disabled {
 	opacity: 0.55;
 	cursor: wait;
-}
-@media (prefers-reduced-motion: reduce) {
-	.cover {
-		transition: none;
-	}
 }
 @media (min-width: 640px) and (max-width: 1023px) {
 	.page,

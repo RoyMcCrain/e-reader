@@ -1,9 +1,15 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { BookCover, SeriesBook } from '#components/library/Bookshelf'
 import { booksFromResponse } from '#components/library/Library'
-import { groupBooks, sortBooks } from '#lib/library/bookshelf'
+import {
+	formatReadAt,
+	selectHistoryEntries,
+	sortBooks,
+} from '#lib/library/bookshelf'
+import type { HistoryEntry } from '#lib/library/bookshelf'
+import { fetchRecency } from '#lib/library/recency'
 import type { CloudBook } from '#lib/library/types'
 
 import styles from '#routes/index.module.css'
@@ -14,6 +20,125 @@ const loadErrorOf = (response: Response): LoadError => {
 	if (response.status === 401 || response.status === 403) return 'auth'
 	if (response.status === 503) return 'unavailable'
 	return response.ok ? '' : 'offline'
+}
+
+const RecentCarousel = ({ entries }: { entries: HistoryEntry[] }) => {
+	const track = useRef<HTMLUListElement>(null)
+	const [scrollState, setScrollState] = useState<
+		'none' | 'start' | 'middle' | 'end'
+	>('none')
+	useEffect(() => {
+		const element = track.current
+		const carousel = element?.parentElement
+		if (!element || !carousel) return
+		const update = () => {
+			if (element.scrollWidth <= carousel.clientWidth)
+				return setScrollState('none')
+			if (element.scrollLeft <= 1) return setScrollState('start')
+			if (element.scrollLeft >= element.scrollWidth - element.clientWidth - 1)
+				return setScrollState('end')
+			setScrollState('middle')
+		}
+		update()
+		element.addEventListener('scroll', update)
+		let frame = 0
+		const observer = new ResizeObserver(() => {
+			cancelAnimationFrame(frame)
+			frame = requestAnimationFrame(update)
+		})
+		observer.observe(element)
+		return () => {
+			element.removeEventListener('scroll', update)
+			observer.disconnect()
+			cancelAnimationFrame(frame)
+		}
+	}, [entries])
+	const scroll = (direction: number) =>
+		track.current?.scrollBy({
+			left: direction * track.current.clientWidth * 0.8,
+		})
+	return (
+		<div className={styles.recentCarousel}>
+			{scrollState !== 'none' && (
+				<button
+					aria-label="最近読んだ本を前へ"
+					disabled={scrollState === 'start'}
+					onClick={() => scroll(-1)}
+				>
+					‹
+				</button>
+			)}
+			<ul
+				ref={track}
+				className={styles.recentTrack}
+				aria-label="最近読んだ本のリスト"
+			>
+				{entries.map((entry) =>
+					entry.kind === 'series' ? (
+						<li key={`series:${entry.series}`}>
+							<Link
+								className={styles.previewCard}
+								to="/bookshelf/series"
+								search={{ name: entry.series, from: '/' }}
+							>
+								<BookCover book={entry.representative} />
+								<span className={styles.previewName}>{entry.series}</span>
+								<span className={styles.previewMeta}>
+									{entry.books.length} 冊 · {formatReadAt(entry.readAt)}
+								</span>
+							</Link>
+						</li>
+					) : (
+						<li key={entry.book.id}>
+							<SeriesBook book={entry.book} from="/" />
+							<time
+								className={styles.previewMeta}
+								dateTime={new Date(entry.readAt).toISOString()}
+							>
+								{formatReadAt(entry.readAt)}
+							</time>
+						</li>
+					),
+				)}
+			</ul>
+			{scrollState !== 'none' && (
+				<button
+					aria-label="最近読んだ本を次へ"
+					disabled={scrollState === 'end'}
+					onClick={() => scroll(1)}
+				>
+					›
+				</button>
+			)}
+		</div>
+	)
+}
+
+const RecentBooksPreview = ({ books }: { books: CloudBook[] }) => {
+	const [recency, setRecency] = useState<Record<string, number>>()
+	useEffect(() => {
+		const controller = new AbortController()
+		void fetchRecency(controller.signal).then((values) => {
+			if (!controller.signal.aborted) setRecency(values)
+		})
+		return () => controller.abort()
+	}, [])
+	const entries = recency
+		? selectHistoryEntries(books, recency).slice(0, 10)
+		: []
+	if (entries.length === 0) return null
+	return (
+		<section className={styles.preview} aria-labelledby="top-recent-heading">
+			<div className={styles.previewHead}>
+				<h2 id="top-recent-heading">最近読んだ本</h2>
+				<span>最大10</span>
+				<Link className={styles.previewMore} to="/history">
+					すべて見る
+				</Link>
+			</div>
+			<RecentCarousel entries={entries} />
+		</section>
+	)
 }
 
 function Home() {
@@ -55,7 +180,6 @@ function Home() {
 		})()
 		return () => controller.abort()
 	}, [retryKey])
-	const seriesPreview = groupBooks(books).slice(0, 10)
 	const newBooks = sortBooks(
 		books.filter((book) => book.uploadedAt),
 		'newest',
@@ -88,67 +212,26 @@ function Home() {
 				</p>
 			</section>
 			{loading ? (
-				<p>クラウドの本を確認しています…</p>
+				<p>本を確認しています…</p>
 			) : listError === 'auth' ? (
 				<p>
-					クラウドの本を読むにはログインが必要です。{' '}
+					本を読むにはログインが必要です。{' '}
 					<a href="https://reader.rrrr.dev/">ログイン</a>
 				</p>
 			) : listError ? (
 				<div>
 					<p>
 						{listError === 'unavailable'
-							? 'クラウドの本は現在利用できません。'
-							: 'クラウドの本を確認できませんでした。'}
+							? '本は現在利用できません。'
+							: '本を確認できませんでした。'}
 					</p>
 					<button onClick={() => setRetryKey((key) => key + 1)}>再試行</button>
 				</div>
 			) : books.length === 0 ? (
-				<p>クラウドに本はありません。</p>
+				<p>本はありません。</p>
 			) : (
 				<>
-					<section
-						className={styles.preview}
-						aria-labelledby="top-series-heading"
-					>
-						<div className={styles.previewHead}>
-							<h2 id="top-series-heading">シリーズ</h2>
-							<span>最大10</span>
-							<Link
-								className={styles.previewMore}
-								to="/bookshelf"
-								search={{ from: undefined }}
-							>
-								すべて見る
-							</Link>
-						</div>
-						<div className={styles.previewGrid}>
-							{seriesPreview.map((group) => {
-								const representative = group.books[0]
-								if (!representative) return null
-								return (
-									<Link
-										key={
-											group.series === undefined
-												? 'unassigned'
-												: `series:${group.series}`
-										}
-										className={styles.previewCard}
-										to="/bookshelf/series"
-										search={{ name: group.series }}
-									>
-										<BookCover book={representative} />
-										<span className={styles.previewName}>
-											{group.series ?? 'シリーズ未設定'}
-										</span>
-										<span className={styles.previewMeta}>
-											{group.books.length} 冊
-										</span>
-									</Link>
-								)
-							})}
-						</div>
-					</section>
+					<RecentBooksPreview books={books} />
 					{newBooks.length > 0 && (
 						<section
 							className={styles.preview}
@@ -168,7 +251,7 @@ function Home() {
 							<ul className={styles.previewGrid}>
 								{newBooks.map((book) => (
 									<li key={book.id}>
-										<SeriesBook book={book} />
+										<SeriesBook book={book} from="/" />
 									</li>
 								))}
 							</ul>
@@ -182,14 +265,14 @@ function Home() {
 					onClick={() =>
 						void navigate({
 							to: '/config',
-							search: { from: undefined, name: undefined },
+							search: { from: undefined, name: undefined, origin: undefined },
 						})
 					}
 				>
 					設定
 				</button>
 				<br />
-				クラウドの本は読書時に取得します。
+				本は読書時に取得します。
 				<br />
 				<span>
 					操作：画面の左右端をタップ · ← → · Space / PageUp / PageDown

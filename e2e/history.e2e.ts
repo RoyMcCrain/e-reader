@@ -65,9 +65,9 @@ test('history combines series and books in recency order with read dates', async
 			contentType: 'application/json',
 			body: JSON.stringify({
 				positions: [
-					{ bookId: standalone.id, updatedAt: 300 },
-					{ bookId: seriesBooks[0]!.id, updatedAt: 100 },
-					{ bookId: seriesBooks[1]!.id, updatedAt: 200 },
+					{ bookId: standalone.id, updatedAt: 1_767_232_800 },
+					{ bookId: seriesBooks[0]!.id, updatedAt: 1_767_225_600 },
+					{ bookId: seriesBooks[1]!.id, updatedAt: 1_767_229_200 },
 				],
 			}),
 		}),
@@ -100,14 +100,14 @@ test('history combines series and books in recency order with read dates', async
 	const standaloneTime = items.nth(0).getByRole('time')
 	await expect(standaloneTime).toHaveAttribute(
 		'datetime',
-		new Date(300).toISOString(),
+		'2026-01-01T02:00:00.000Z',
 	)
 	await expect(items.nth(1)).toContainText('星の旅')
 	await expect(items.nth(1)).toContainText('2 冊')
 	const seriesTime = items.nth(1).getByRole('time')
 	await expect(seriesTime).toHaveAttribute(
 		'datetime',
-		new Date(200).toISOString(),
+		'2026-01-01T01:00:00.000Z',
 	)
 	const seriesLink = items
 		.nth(1)
@@ -115,7 +115,7 @@ test('history combines series and books in recency order with read dates', async
 		.first()
 	await expect(seriesLink).toHaveAttribute(
 		'href',
-		'/bookshelf/series?name=%E6%98%9F%E3%81%AE%E6%97%85',
+		'/bookshelf/series?name=%E6%98%9F%E3%81%AE%E6%97%85&from=%2Fhistory',
 	)
 	await seriesLink.click()
 	await expect(page).toHaveURL(/\/bookshelf\/series\?name=/)

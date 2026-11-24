@@ -11,26 +11,10 @@ import type { BookshelfProps } from '#components/library/Bookshelf'
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { formatReadAt, selectHistoryEntries } from '#lib/library/bookshelf'
 import type { HistoryEntry } from '#lib/library/bookshelf'
-import { parseRecency } from '#lib/library/recency'
+import { fetchRecency } from '#lib/library/recency'
 import type { CloudBook } from '#lib/library/types'
 
 import styles from '#components/library/Bookshelf.module.css'
-
-const fetchRecency = async () => {
-	try {
-		const response = await fetch('/api/reading-positions', {
-			credentials: 'same-origin',
-		})
-		if (!response.ok) {
-			// Unread bodies keep network requests in flight and block networkidle.
-			await response.body?.cancel()
-			return undefined
-		}
-		return parseRecency(await response.json())
-	} catch {
-		return undefined
-	}
-}
 
 const HistoryTime = ({ readAt }: { readAt: number }) => (
 	<time dateTime={new Date(readAt).toISOString()}>{formatReadAt(readAt)}</time>
@@ -45,13 +29,16 @@ const SeriesEntry = ({
 		<Link
 			className={styles.book}
 			to="/bookshelf/series"
-			search={{ name: entry.series }}
+			search={{ name: entry.series, from: '/history' }}
 			aria-label={`${entry.series}、${entry.books.length}冊、最後に読んだ ${formatReadAt(entry.readAt)}`}
 		>
 			<BookCover book={entry.representative} />
 		</Link>
 		<p className={styles.cardTitle}>
-			<Link to="/bookshelf/series" search={{ name: entry.series }}>
+			<Link
+				to="/bookshelf/series"
+				search={{ name: entry.series, from: '/history' }}
+			>
 				{entry.series}
 			</Link>
 		</p>
@@ -126,7 +113,10 @@ export const History = ({
 							本棚
 						</Link>
 						<LocalFileButton />
-						<Link to="/config" search={{ from: '/history', name: undefined }}>
+						<Link
+							to="/config"
+							search={{ from: '/history', name: undefined, origin: undefined }}
+						>
 							設定
 						</Link>
 					</nav>
@@ -197,7 +187,7 @@ export const History = ({
 							) : (
 								<p>
 									{hasHistory
-										? '読んだ本はクラウドにありません。'
+										? '読んだ本は見つかりません。'
 										: 'まだ読んだ本がありません。'}
 								</p>
 							)}

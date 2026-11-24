@@ -98,6 +98,7 @@ export default defineConfig({
 		ignorePatterns: [
 			'src/routeTree.gen.ts',
 			'pnpm-lock.yaml',
+			'public/mockServiceWorker.js',
 			'.agents/skills/mutator/**',
 			'.agents/skills/mutation-test-loop/**',
 		],

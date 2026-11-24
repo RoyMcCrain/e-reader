@@ -8,11 +8,13 @@ export const parsePosition = (item: unknown) => {
 		typeof bookId !== 'string' ||
 		typeof updatedAt !== 'number' ||
 		!Number.isSafeInteger(updatedAt) ||
-		updatedAt < 0 ||
-		!Number.isFinite(new Date(updatedAt).getTime())
+		updatedAt < 0
 	)
 		return undefined
-	return [bookId, updatedAt] as const
+	// The server stores and returns Unix seconds; the client works in milliseconds.
+	const readAt = updatedAt * 1000
+	if (!Number.isFinite(new Date(readAt).getTime())) return undefined
+	return [bookId, readAt] as const
 }
 
 export const parseRecency = (data: unknown) => {
@@ -23,4 +25,21 @@ export const parseRecency = (data: unknown) => {
 		if (position) values[position[0]] = position[1]
 	}
 	return values
+}
+
+export const fetchRecency = async (signal?: AbortSignal) => {
+	try {
+		const response = await fetch('/api/reading-positions', {
+			credentials: 'same-origin',
+			signal,
+		})
+		if (!response.ok) {
+			// Unread bodies keep network requests in flight and block networkidle.
+			await response.body?.cancel()
+			return undefined
+		}
+		return parseRecency(await response.json())
+	} catch {
+		return undefined
+	}
 }

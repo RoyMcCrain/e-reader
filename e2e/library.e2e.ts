@@ -55,6 +55,7 @@ test('opens an unassigned private ZIP from its own shelf and keeps settings', as
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'シリーズ未設定' }),
 	).toBeVisible()
+	const seriesUrl = page.url()
 	await page.getByRole('button', { name: /sample-fixture\.zip/ }).click()
 	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
 	await page.getByRole('button', { name: '設定' }).click()
@@ -62,7 +63,7 @@ test('opens an unassigned private ZIP from its own shelf and keeps settings', as
 	await page.getByRole('button', { name: '読書に戻る' }).click()
 	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
 	await page.getByRole('button', { name: '本を閉じる' }).click()
-	await expect(page).toHaveURL('/bookshelf/series')
+	await expect(page).toHaveURL(seriesUrl)
 	await expect(
 		page.getByRole('button', { name: /sample-fixture\.zip/ }),
 	).toBeVisible()

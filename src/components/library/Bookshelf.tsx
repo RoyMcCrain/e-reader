@@ -80,11 +80,17 @@ export const BookshelfBook = ({
 	</button>
 )
 
-export const SeriesBook = ({ book }: { book: CloudBook }) => (
+export const SeriesBook = ({
+	book,
+	from = '/bookshelf',
+}: {
+	book: CloudBook
+	from?: '/' | '/bookshelf'
+}) => (
 	<Link
 		className={styles.book}
 		to="/bookshelf/series"
-		search={{ name: book.series }}
+		search={{ name: book.series, from }}
 		aria-label={`${book.name}、${book.format.toUpperCase()}`}
 	>
 		<BookCover book={book} />
@@ -288,7 +294,7 @@ const SeriesCarousel = ({
 }
 
 const AllBooksContent = ({ books, filtered, sort }: AllBooksProps) => {
-	if (books.length === 0) return <p>クラウドに本はありません。</p>
+	if (books.length === 0) return <p>本はありません。</p>
 	if (filtered.length === 0) return <p>条件に合う本はありません。</p>
 
 	if (sort !== 'series')
@@ -306,7 +312,10 @@ const AllBooksContent = ({ books, filtered, sort }: AllBooksProps) => {
 			key={group.series === undefined ? 'unassigned' : `series:${group.series}`}
 		>
 			<h3>
-				<Link to="/bookshelf/series" search={{ name: group.series }}>
+				<Link
+					to="/bookshelf/series"
+					search={{ name: group.series, from: '/bookshelf' }}
+				>
 					{group.series ?? 'シリーズ未設定'}
 				</Link>{' '}
 				<small>{group.books.length} 冊</small>
@@ -341,12 +350,12 @@ export const LibraryStateMessage = ({
 	listError,
 	retry,
 }: Pick<BookshelfProps, 'loading' | 'listError' | 'retry'>) => {
-	if (loading) return <p>クラウドの本を確認しています…</p>
+	if (loading) return <p>本を確認しています…</p>
 	if (!listError) return null
 	if (listError === 'auth')
 		return (
 			<p>
-				クラウドの本を読むにはログインが必要です。{' '}
+				本を読むにはログインが必要です。{' '}
 				<a href="https://reader.rrrr.dev/">ログイン</a>
 			</p>
 		)
@@ -354,8 +363,8 @@ export const LibraryStateMessage = ({
 		<div>
 			<p>
 				{listError === 'unavailable'
-					? 'クラウドの本は現在利用できません。'
-					: 'クラウドの本を確認できませんでした。'}
+					? '本は現在利用できません。'
+					: '本を確認できませんでした。'}
 			</p>
 			<button onClick={retry}>再試行</button>
 		</div>
@@ -416,7 +425,10 @@ const BookshelfHeader = ({ ready, query, setQuery }: BookshelfHeaderProps) => {
 				<nav aria-label="メインナビゲーション">
 					<Link to="/history">履歴</Link>
 					<LocalFileButton />
-					<Link to="/config" search={{ from: '/bookshelf', name: undefined }}>
+					<Link
+						to="/config"
+						search={{ from: '/bookshelf', name: undefined, origin: undefined }}
+					>
 						設定
 					</Link>
 					{ready && (

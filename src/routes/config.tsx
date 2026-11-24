@@ -7,6 +7,11 @@ import { DEFAULT_SETTINGS, type ReaderSettings } from '#lib/reader/preferences'
 
 import styles from '#routes/config.module.css'
 
+type SeriesOrigin = '/' | '/bookshelf' | '/history'
+
+const isSeriesOrigin = (value: unknown): value is SeriesOrigin =>
+	value === '/' || value === '/bookshelf' || value === '/history'
+
 export const Route = createFileRoute('/config')({
 	validateSearch: (search: Record<string, unknown>) => ({
 		from:
@@ -18,6 +23,10 @@ export const Route = createFileRoute('/config')({
 		name:
 			search.from === '/bookshelf/series'
 				? parseSeriesName(search.name)
+				: undefined,
+		origin:
+			search.from === '/bookshelf/series' && isSeriesOrigin(search.origin)
+				? search.origin
 				: undefined,
 	}),
 	component: Config,
@@ -99,7 +108,7 @@ const NumericSetting = ({
 function Config() {
 	const { settings, updateSettings, resetSettings, file } = useReaderApp()
 	const navigate = useNavigate()
-	const { from, name } = Route.useSearch()
+	const { from, name, origin } = Route.useSearch()
 	const setNumber = (field: keyof ReaderSettings, value: number) =>
 		updateSettings({ [field]: value })
 	return (
@@ -110,7 +119,7 @@ function Config() {
 					onClick={() =>
 						void navigate(
 							from === '/bookshelf/series'
-								? { to: '/bookshelf/series', search: { name } }
+								? { to: '/bookshelf/series', search: { name, from: origin } }
 								: { to: from ?? '/' },
 						)
 					}

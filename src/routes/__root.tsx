@@ -6,7 +6,7 @@ import {
 	useLocation,
 	useNavigate,
 } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
 	ReaderProvider,
@@ -54,6 +54,13 @@ const AppShell = () => {
 										from === '/bookshelf/series'
 											? parseSeriesName(search.name)
 											: undefined,
+									origin:
+										from === '/bookshelf/series' &&
+										(search.from === '/' ||
+											search.from === '/bookshelf' ||
+											search.from === '/history')
+											? search.from
+											: undefined,
 								},
 							})
 						}
@@ -67,7 +74,23 @@ const AppShell = () => {
 	)
 }
 
+// Dev-only MSW mock toggle: `?mock=1` enables (persisted in localStorage),
+// `?mock=0` disables. Env vars cannot reach import.meta.env in this stack.
+const mockRequested = () => {
+	const param = new URLSearchParams(window.location.search).get('mock')
+	try {
+		if (param === '1') window.localStorage.setItem('shiori-mock', '1')
+		if (param === '0') window.localStorage.removeItem('shiori-mock')
+		return window.localStorage.getItem('shiori-mock') === '1'
+	} catch {
+		// Blocked or full storage (SecurityError / QuotaExceededError): mock stays off.
+		return false
+	}
+}
+
 const RootDocument = () => {
+	const [mockReady, setMockReady] = useState(!import.meta.env.DEV)
+
 	useEffect(() => {
 		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 			void navigator.serviceWorker
@@ -78,15 +101,44 @@ const RootDocument = () => {
 		}
 	}, [])
 
+	useEffect(() => {
+		if (!import.meta.env.DEV) return
+		let active = true
+		if (!mockRequested()) {
+			void Promise.resolve().then(() => {
+				if (active) setMockReady(true)
+			})
+			return () => {
+				active = false
+			}
+		}
+		void import('#mocks/browser')
+			.then(({ startMockWorker }) => startMockWorker())
+			.then(() => {
+				if (active) setMockReady(true)
+			})
+			.catch((error: unknown) => {
+				console.warn('MSW mock failed', error)
+				if (active) setMockReady(true)
+			})
+		return () => {
+			active = false
+		}
+	}, [])
+
 	return (
 		<html lang="ja">
 			<head>
 				<HeadContent />
 			</head>
 			<body>
-				<ReaderProvider>
-					<AppShell />
-				</ReaderProvider>
+				{mockReady ? (
+					<ReaderProvider>
+						<AppShell />
+					</ReaderProvider>
+				) : (
+					<p>モックを準備しています…</p>
+				)}
 				<Scripts />
 			</body>
 		</html>

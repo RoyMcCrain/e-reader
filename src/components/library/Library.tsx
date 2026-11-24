@@ -16,6 +16,7 @@ interface LibraryProps {
 	presentation?: 'list' | 'bookshelf' | 'series' | 'history'
 	seriesName?: string
 	returnFromSeries?: boolean
+	seriesFrom?: SeriesFrom
 }
 
 const formatSize = (size: number) =>
@@ -127,26 +128,26 @@ const LibraryState = ({
 	books,
 	retry,
 }: LibraryStateProps) => {
-	if (loading) return <p>クラウドの本を確認しています…</p>
+	if (loading) return <p>本を確認しています…</p>
 	switch (listError) {
 		case 'auth':
 			return (
 				<p>
-					クラウドの本を読むにはログインが必要です。{' '}
+					本を読むにはログインが必要です。{' '}
 					<a href="https://reader.rrrr.dev/">ログイン</a>
 				</p>
 			)
 		case 'offline':
-			return <p>クラウドの本を確認できませんでした。</p>
+			return <p>本を確認できませんでした。</p>
 		case 'unavailable':
 			return (
 				<div>
-					<p>クラウドの本は現在利用できません。</p>
+					<p>本は現在利用できません。</p>
 					<button onClick={retry}>再試行</button>
 				</div>
 			)
 		case '':
-			return books.length === 0 ? <p>クラウドに本はありません。</p> : null
+			return books.length === 0 ? <p>本はありません。</p> : null
 	}
 }
 
@@ -207,6 +208,7 @@ const openCloudBook = async (
 interface SeriesDetailsProps {
 	books: CloudBook[]
 	seriesName?: string
+	seriesFrom?: '/' | '/bookshelf' | '/history'
 	loading: boolean
 	listError: LibraryStateProps['listError']
 	retry: () => void
@@ -247,6 +249,17 @@ const authorLabel = (books: CloudBook[]) =>
 		),
 	].join('、')
 
+type SeriesFrom = '/' | '/bookshelf' | '/history'
+
+const SeriesBackLink = ({ from }: { from?: SeriesFrom }) =>
+	from === '/' || from === '/history' ? (
+		<Link to={from}>← 戻る</Link>
+	) : (
+		<Link to="/bookshelf" search={{ from: 'series' }}>
+			← 戻る
+		</Link>
+	)
+
 const SeriesDetails = (props: SeriesDetailsProps) => {
 	const {
 		books,
@@ -256,6 +269,7 @@ const SeriesDetails = (props: SeriesDetailsProps) => {
 		retry,
 		busyId,
 		downloadError,
+		seriesFrom,
 	} = props
 
 	const title = seriesName ?? 'シリーズ未設定'
@@ -263,9 +277,7 @@ const SeriesDetails = (props: SeriesDetailsProps) => {
 	const authors = seriesName === undefined ? '' : authorLabel(selected)
 	return (
 		<main className={`${styles.library} ${styles.series}`}>
-			<Link to="/bookshelf" search={{ from: 'series' }}>
-				本棚に戻る
-			</Link>
+			<SeriesBackLink from={seriesFrom} />
 			<h1>{title}</h1>
 			{authors && <p>著者: {authors}</p>}
 			{!loading && !listError && <p>{selected.length} 冊</p>}
@@ -291,6 +303,7 @@ export const Library = ({
 	presentation = 'list',
 	seriesName,
 	returnFromSeries,
+	seriesFrom,
 }: LibraryProps) => {
 	const { setFile } = useReaderApp()
 	const [books, setBooks] = useState<CloudBook[]>([])
@@ -357,6 +370,7 @@ export const Library = ({
 			<SeriesDetails
 				books={books}
 				seriesName={seriesName}
+				seriesFrom={seriesFrom}
 				loading={loading}
 				listError={listError}
 				retry={retry}
@@ -367,7 +381,7 @@ export const Library = ({
 		)
 	return (
 		<section className={styles.library} aria-labelledby="library-heading">
-			<h2 id="library-heading">クラウドの本</h2>
+			<h2 id="library-heading">本</h2>
 			<LibraryState
 				loading={loading}
 				listError={listError}
