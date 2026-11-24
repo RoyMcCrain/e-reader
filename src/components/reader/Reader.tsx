@@ -37,6 +37,7 @@ import {
 } from '#lib/reader/positions'
 import type { RemotePosition } from '#lib/reader/positions'
 import type { ReaderSettings } from '#lib/reader/preferences'
+import { syncPresentation, syncStatusText } from '#lib/reader/sync-presentation'
 
 import styles from '#components/reader/Reader.module.css'
 
@@ -56,10 +57,10 @@ const messageFor = (cause: unknown) =>
 	cause instanceof Error ? cause.message : 'ファイルを開けませんでした。'
 
 const syncMessages = {
-	auth: 'ログインすると同期できます。',
-	conflict: '同期に競合があります。',
-	pending: '同期は保留中です。',
-	synced: '同期済み',
+	auth: syncStatusText.auth,
+	conflict: syncStatusText.conflict,
+	pending: syncStatusText.pending,
+	synced: syncStatusText.synced,
 }
 
 interface TocProps {
@@ -321,11 +322,11 @@ const openEpubFile = async ({
 		initialCFI,
 		onConfirmedPosition: (cfi) => {
 			if (!bookId || signal.aborted || refs.generation.current !== id) return
-			setPositionStatus('端末に保存中…')
+			setPositionStatus(syncStatusText.saving)
 			void savePosition(bookId, cfi)
 				.then(async () => {
 					if (signal.aborted || refs.generation.current !== id) return
-					setPositionStatus('端末に保存しました。同期中…')
+					setPositionStatus(syncStatusText.syncing)
 					const status = await syncPosition(bookId!)
 					if (signal.aborted || refs.generation.current !== id) return
 					const saved = await loadPosition(bookId!)
@@ -342,7 +343,7 @@ const openEpubFile = async ({
 					setPositionStatus(
 						saved?.pending || status === 'pending'
 							? syncMessages.pending
-							: '端末に保存し、同期しました。',
+							: syncStatusText.saved,
 					)
 				})
 				.catch(() => {
@@ -562,6 +563,24 @@ interface PositionStatusProps {
 	useLocal: () => void
 }
 
+const PositionStatusVisual = ({ status }: { status: string }) => {
+	const presentation = syncPresentation(status)
+	if (presentation === null) return null
+	if (presentation === 'spinner')
+		return (
+			<>
+				<span className={styles.syncSpinner} aria-hidden="true" />
+				<span className={styles.srOnly}>{status}</span>
+			</>
+		)
+	return (
+		<>
+			<Icon name={presentation} />
+			<span className={styles.srOnly}>{status}</span>
+		</>
+	)
+}
+
 const PositionStatus = ({
 	positionStatus,
 	remoteAvailable,
@@ -569,10 +588,11 @@ const PositionStatus = ({
 	busy,
 	conflict,
 	useLocal,
-}: PositionStatusProps) =>
-	positionStatus || conflict || remoteAvailable ? (
+}: PositionStatusProps) => {
+	const presentation = syncPresentation(positionStatus)
+	return presentation !== null || conflict || remoteAvailable ? (
 		<output className={styles.positionStatus}>
-			{positionStatus}
+			<PositionStatusVisual status={positionStatus} />
 			{conflict ? (
 				<>
 					<button disabled={busy} onClick={useLocal}>
@@ -591,6 +611,7 @@ const PositionStatus = ({
 			) : null}
 		</output>
 	) : null
+}
 
 interface ReaderControlsProps {
 	onClose: () => void
@@ -872,10 +893,9 @@ export const Reader = ({
 				if (result.remote) setRemoteCFI(result.remote)
 				if (!result.status) return
 				setPositionStatus((previous) => {
-					const restored = [
-						'別端末の位置に移動しました。',
-						'端末の新しい位置を保持しました。',
-					].includes(result.status)
+					const restored = (
+						[syncStatusText.moved, syncStatusText.kept] as string[]
+					).includes(result.status)
 					return previous ===
 						'保存した位置を開けず、先頭から表示しています。' && !restored
 						? previous
@@ -1014,12 +1034,12 @@ export const Reader = ({
 						checkpoint,
 					)
 					if (generation.current !== id || session.current !== current) return
-					setPositionStatus('同期に競合があります。')
+					setPositionStatus(syncStatusText.conflict)
 					return
 				}
 				setRemoteCFI(undefined)
 				setHasConflict(false)
-				setPositionStatus('別端末の位置に移動しました。')
+				setPositionStatus(syncStatusText.moved)
 			} catch {
 				if (generation.current === id && session.current === current) {
 					await rollbackPositionSession(
