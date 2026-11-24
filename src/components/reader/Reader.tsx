@@ -18,8 +18,14 @@ import { ReaderProgress } from '#components/reader/ReaderProgress'
 import { useReaderChrome } from '#components/reader/useReaderChrome'
 import { openImageArchive } from '#lib/reader/archive'
 import { openEpub } from '#lib/reader/epub'
+import {
+	loadEpubCfiBackup,
+	saveEpubCfiBackup,
+	selectInitialCfi,
+} from '#lib/reader/epub-cfi-backup'
 import type { EpubSession } from '#lib/reader/epub-types'
 import { bindHostInput } from '#lib/reader/input'
+import { writeLastSession } from '#lib/reader/last-session'
 import { columnsForWidth, nextLead, visibleIndices } from '#lib/reader/layout'
 import { animatePage, type SwipeDirection } from '#lib/reader/motion'
 import {
@@ -38,6 +44,7 @@ import {
 import type { RemotePosition } from '#lib/reader/positions'
 import type { ReaderSettings } from '#lib/reader/preferences'
 import { syncPresentation, syncStatusText } from '#lib/reader/sync-presentation'
+import { loadZipLead, saveZipLead } from '#lib/reader/zip-position'
 
 import styles from '#components/reader/Reader.module.css'
 
@@ -94,6 +101,8 @@ interface ZipRefs {
 	imageRequest: MutableRefObject<number>
 	active: MutableRefObject<boolean>
 	firstPageSingle: MutableRefObject<boolean>
+	bookId: MutableRefObject<string | undefined>
+	fileName: MutableRefObject<string>
 }
 interface ZipSetters {
 	setIndices: Dispatch<SetStateAction<number[]>>
@@ -101,6 +110,12 @@ interface ZipSetters {
 	setProgress: Dispatch<SetStateAction<number>>
 	setAtEnd: Dispatch<SetStateAction<boolean>>
 	setError: Dispatch<SetStateAction<string>>
+}
+const rememberZip = (refs: ZipRefs, lead: number) => {
+	const bookId = refs.bookId.current
+	if (!bookId) return
+	saveZipLead(bookId, lead)
+	writeLastSession({ bookId, name: refs.fileName.current, format: 'zip' })
 }
 const updateZip = async (
 	archive: Archive,
@@ -122,6 +137,7 @@ const updateZip = async (
 	)
 		return
 	refs.lead.current = lead
+	rememberZip(refs, lead)
 	refs.swipe.current = swipeDirection ?? null
 	setters.setError('')
 	setters.setIndices(indices)
@@ -291,7 +307,17 @@ const loadInitialPosition = async ({
 		if (!signal.aborted && refs.generation.current === id)
 			setPositionStatus('端末内の読書位置を利用できません。')
 	}
-	return { bookId, initialCFI }
+	const backup = bookId ? loadEpubCfiBackup(bookId) : undefined
+	return { bookId, initialCFI: selectInitialCfi(initialCFI, backup) }
+}
+
+const zipResume = async (file: File, archive: Archive) => {
+	try {
+		const bookId = await hashBook(file)
+		return { bookId, lead: loadZipLead(bookId, archive.names.length) ?? 0 }
+	} catch {
+		return { bookId: undefined, lead: 0 }
+	}
 }
 
 const openEpubFile = async ({
@@ -323,6 +349,9 @@ const openEpubFile = async ({
 		onConfirmedPosition: (cfi) => {
 			if (!bookId || signal.aborted || refs.generation.current !== id) return
 			setPositionStatus(syncStatusText.saving)
+			// Synchronous writes go first so a tab kill during IndexedDB still keeps the CFI.
+			saveEpubCfiBackup(bookId, cfi)
+			writeLastSession({ bookId, name: file.name, format: 'epub' })
 			void savePosition(bookId, cfi)
 				.then(async () => {
 					if (signal.aborted || refs.generation.current !== id) return
@@ -371,6 +400,7 @@ const openEpubFile = async ({
 		await epub.close()
 		return
 	}
+	if (bookId) writeLastSession({ bookId, name: file.name, format: 'epub' })
 	refs.session.current = { kind: 'epub', epub, bookId }
 	setHasSession(true)
 	setDirection(epub.dir)
@@ -384,14 +414,19 @@ const openReaderFile = async (options: OpenReaderFileOptions) => {
 	const { file, id, signal, refs, setters, setArchive, setHasSession } = options
 	if (file.name.toLowerCase().endsWith('.zip')) {
 		const archive = await openImageArchive(file)
+		const resume = await zipResume(file, archive)
 		if (signal.aborted) {
 			await archive.close()
 			return
 		}
+		refs.bookId.current = resume.bookId
+		refs.fileName.current = file.name
+		// Publish the restored lead before setArchive triggers effects: a scheduled update reads refs.lead.current, so leaving 0 would repaint and re-save page one over the resume position.
+		refs.lead.current = resume.lead
 		refs.session.current = { kind: 'zip', archive }
 		setHasSession(true)
 		setArchive(archive)
-		await updateZip(archive, 0, id, refs, setters)
+		await updateZip(archive, resume.lead, id, refs, setters)
 		return
 	}
 	if (file.name.toLowerCase().endsWith('.epub')) return openEpubFile(options)
@@ -523,10 +558,14 @@ const useOpenFile = ({
 			animation: animationRef,
 			session: sessionRef,
 			swipe: swipeRef,
+			bookId: bookIdRef,
+			fileName: fileNameRef,
 		} = refs
 		return () => {
 			controller.abort()
 			generationRef.current++
+			bookIdRef.current = undefined
+			fileNameRef.current = ''
 			animationRef.current?.cancel()
 			animationRef.current = null
 			swipeRef.current = null
@@ -792,6 +831,8 @@ export const Reader = ({
 	const imageRequest = useRef(0)
 	const activeRef = useRef(active)
 	const firstPageSingleRef = useRef(settings.firstPageSingle)
+	const zipBookId = useRef<string | undefined>(undefined)
+	const zipFileName = useRef('')
 	const [columns, setColumns] = useState<1 | 2>(1)
 	const [archive, setArchive] = useState<Archive | null>(null)
 	const [urls, setUrls] = useState<string[]>([])
@@ -836,6 +877,8 @@ export const Reader = ({
 			imageRequest,
 			active: activeRef,
 			firstPageSingle: firstPageSingleRef,
+			bookId: zipBookId,
+			fileName: zipFileName,
 		}),
 		[],
 	)

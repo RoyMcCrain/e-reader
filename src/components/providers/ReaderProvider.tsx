@@ -47,9 +47,11 @@ export const ReaderProvider = ({ children }: ReaderProviderProps) => {
 		}
 		retry()
 		window.addEventListener('online', retry)
+		window.addEventListener('pagehide', retry)
 		document.addEventListener('visibilitychange', retry)
 		return () => {
 			window.removeEventListener('online', retry)
+			window.removeEventListener('pagehide', retry)
 			document.removeEventListener('visibilitychange', retry)
 		}
 	}, [])
