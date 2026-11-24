@@ -82,6 +82,24 @@ const readAtOf = (book: CloudBook, recency: Record<string, number>) => {
 	return typeof readAt === 'number' && readAt > 0 ? readAt : undefined
 }
 
+export const latestReadBook = (
+	books: CloudBook[],
+	recency: Record<string, number>,
+) => {
+	let latest: CloudBook | undefined
+	let readAt = 0
+	for (const book of books) {
+		const at = readAtOf(book, recency)
+		if (at === undefined) continue
+		// readAtOf only returns positive values, so the first hit beats readAt 0.
+		if (at > readAt || (at === readAt && book.id < latest!.id)) {
+			latest = book
+			readAt = at
+		}
+	}
+	return latest === undefined ? undefined : { book: latest, readAt }
+}
+
 export const selectHistoryEntries = (
 	books: CloudBook[],
 	recency: Record<string, number>,
