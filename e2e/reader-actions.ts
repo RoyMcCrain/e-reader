@@ -31,6 +31,8 @@ export const turnPage = async (page: Page, next: boolean) => {
 		page.getByRole('progressbar', { name: '読書の進捗' }),
 	).toBeVisible()
 	await revealReader(page)
-	await readerChrome(page).locator('header span[title]').click()
+	await readerChrome(page)
+		.locator('header')
+		.click({ position: { x: 4, y: 2 } })
 	await page.keyboard.press(next ? 'PageDown' : 'PageUp')
 }

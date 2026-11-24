@@ -6,7 +6,7 @@ import {
 	ZipWriter,
 } from '@zip.js/zip.js'
 
-import { expectChromeHiddenImmediately } from './reader-actions'
+import { expectChromeHiddenImmediately, revealReader } from './reader-actions'
 
 const makeEpub = async () => {
 	const writer = new ZipWriter(new BlobWriter())
@@ -101,6 +101,119 @@ const waitForHiddenChrome = async (page: import('@playwright/test').Page) => {
 		.toBe('0')
 }
 
+test('a long Japanese ZIP title wraps inside the header beside the controls at 320px', async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 320, height: 568 })
+	const longTitle =
+		'銀河鉄道の夜を越えて遠い星々をめぐる長い旅路の記録と挿絵の全集改訂完全版です'
+	await page.goto('/bookshelf')
+	await page.waitForLoadState('networkidle')
+	await page.locator('input[type=file]').setInputFiles({
+		name: `${longTitle}.zip`,
+		mimeType: 'application/zip',
+		buffer: await makeZip(),
+	})
+	await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
+	await revealReader(page)
+	const header = page.locator('header', {
+		has: page.getByRole('button', { name: '本を閉じる' }),
+	})
+	await expect(header).toHaveCSS('opacity', '1')
+	const title = header.getByRole('region', { name: longTitle })
+	await expect(title).toHaveText(longTitle)
+	const layout = await title.evaluate((element) => {
+		const range = document.createRange()
+		range.selectNodeContents(element)
+		const lines = new Set(
+			[...range.getClientRects()].map((rect) => Math.round(rect.top)),
+		)
+		return {
+			lines: lines.size,
+			overflowsX: element.scrollWidth > element.clientWidth,
+			overflowsY: element.scrollHeight > element.clientHeight,
+		}
+	})
+	expect(layout.lines).toBeGreaterThan(1)
+	expect(layout.overflowsX).toBe(false)
+	expect(layout.overflowsY).toBe(false)
+	const close = await header
+		.getByRole('button', { name: '本を閉じる' })
+		.boundingBox()
+	const box = await title.boundingBox()
+	const toc = await header.getByRole('button', { name: '目次' }).boundingBox()
+	expect(close!.x + close!.width).toBeLessThanOrEqual(box!.x)
+	expect(box!.x + box!.width).toBeLessThanOrEqual(toc!.x)
+})
+
+test('a very long ZIP title scrolls inside the header while controls stay reachable at 320x203', async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 320, height: 203 })
+	const longTitle = '銀河鉄道の夜'.repeat(38)
+	await page.goto('/bookshelf')
+	await page.waitForLoadState('networkidle')
+	await page.locator('input[type=file]').setInputFiles({
+		name: `${longTitle}.zip`,
+		mimeType: 'application/zip',
+		buffer: await makeZip(),
+	})
+	await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
+	await revealReader(page)
+	const header = page.locator('header', {
+		has: page.getByRole('button', { name: '本を閉じる' }),
+	})
+	const close = header.getByRole('button', { name: '本を閉じる' })
+	const scrollArea = header.getByRole('region', { name: longTitle })
+	await expect(close).toBeInViewport({ ratio: 1 })
+	await expect(header.getByRole('button', { name: '目次' })).toBeInViewport({
+		ratio: 1,
+	})
+	await expect(header.getByRole('button', { name: '設定' })).toBeInViewport({
+		ratio: 1,
+	})
+	const headerBox = await header.boundingBox()
+	const footerBox = await page
+		.getByRole('region', { name: '読書画面' })
+		.locator('footer')
+		.boundingBox()
+	expect(headerBox!.y + headerBox!.height).toBeLessThanOrEqual(footerBox!.y)
+
+	await close.focus()
+	await page.keyboard.press('Tab')
+	await expect(scrollArea).toBeFocused()
+	await page.keyboard.press('PageDown')
+	await expect
+		.poll(() => scrollArea.evaluate((element) => element.scrollTop))
+		.toBeGreaterThan(0)
+	await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
+})
+
+test('clicking a short ZIP title leaves PageDown free to turn the page', async ({
+	page,
+}) => {
+	await page.addInitScript(() => {
+		localStorage.setItem(
+			'shiori.reader.settings.v1',
+			JSON.stringify({ spread: 'single', firstPageSingle: false }),
+		)
+	})
+	await page.goto('/bookshelf')
+	await page.waitForLoadState('networkidle')
+	await page.locator('input[type=file]').setInputFiles({
+		name: 'Short.zip',
+		mimeType: 'application/zip',
+		buffer: await makeZip(),
+	})
+	await expect(page.getByRole('img', { name: '画像 1 / 3' })).toBeVisible()
+	await revealReader(page)
+	const title = page.locator('header').getByRole('region', { name: 'Short' })
+	await title.click()
+	await expect(title).toBeFocused()
+	await page.keyboard.press('PageDown')
+	await expect(page.getByRole('img', { name: '画像 2 / 3' })).toBeVisible()
+})
+
 test('EPUB chrome fades without moving the stage and document pointer activity reveals it', async ({
 	page,
 }) => {
@@ -171,7 +284,7 @@ test('TOC focus pins chrome; settings return clears the pin and idle hiding resu
 	await expect(page.getByRole('heading', { name: '設定' })).toBeVisible()
 	await page.getByRole('button', { name: '読書に戻る' }).click()
 	await expect(header).toHaveCSS('opacity', '1')
-	await page.locator('header span[title]').click()
+	await revealReader(page)
 	await waitForHiddenChrome(page)
 })
 

@@ -490,12 +490,14 @@ test('bookshelf omits the recently-read shelf and links to the history page', as
 test('series detail shows the last read volume and resumes it in the reader', async ({
 	page,
 }) => {
+	await page.setViewportSize({ width: 320, height: 640 })
 	const archive = await makeZip()
 	const seriesName = '星の旅'
+	const latestName = `巻10-${'x'.repeat(120)}.zip`
 	const shelf = [
 		{
 			id: '1'.repeat(64),
-			name: '巻10.zip',
+			name: latestName,
 			format: 'zip',
 			size: archive.length,
 			series: seriesName,
@@ -522,8 +524,13 @@ test('series detail shows the last read volume and resumes it in the reader', as
 	]
 	await mockLibrary(page, shelf, archive, positions)
 	await page.goto(`/bookshelf/series?name=${encodeURIComponent(seriesName)}`)
-	const resume = page.getByRole('button', { name: '続きを読む、巻10.zip' })
+	const resume = page.getByRole('button', { name: `続きを読む、${latestName}` })
 	await expect(resume).toBeVisible()
+	const widths = await page.evaluate(() => ({
+		scroll: document.documentElement.scrollWidth,
+		client: document.documentElement.clientWidth,
+	}))
+	expect(widths.scroll).toBeLessThanOrEqual(widths.client)
 	await expect(page.getByText('別作品')).toHaveCount(0)
 	const list = page.getByRole('list', { name: `${seriesName}の収録本` })
 	const current = list.locator('li[aria-current="true"]')
