@@ -31,6 +31,8 @@ describe('progress labels', () => {
 		expect(progressRemaining(10, 2, [2])).toBe('あと7ページ')
 		expect(progressLocation(10, 4, [4, 5])).toBe('5–6/10')
 		expect(progressRemaining(10, 4, [4, 5])).toBe('あと4ページ')
+		expect(progressLocation(10, 4, [4, 5, 7])).toBe('5–8/10')
+		expect(progressRemaining(10, 4, [4, 5, 7])).toBe('あと2ページ')
 	})
 
 	test('describes the final page and handles empty indices or unknown totals', () => {

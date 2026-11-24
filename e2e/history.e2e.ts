@@ -222,3 +222,36 @@ test('history retries after a failed position lookup', async ({ page }) => {
 		'まだ読んだ本がありません。',
 	)
 })
+
+test('history excludes books with zero recency', async ({ page }) => {
+	const shelf = [
+		{ id: '1'.repeat(64), name: '読みかけ.epub', format: 'epub', size: 10 },
+		{ id: '2'.repeat(64), name: '読み終わり.epub', format: 'epub', size: 10 },
+	]
+	await page.route('**/api/books', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ books: shelf }),
+		}),
+	)
+	await page.route('**/api/reading-positions', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				positions: [
+					{ bookId: shelf[0]!.id, updatedAt: 0 },
+					{ bookId: shelf[1]!.id, updatedAt: 50 },
+				],
+			}),
+		}),
+	)
+	await page.route('**/api/books/*/cover', (route) =>
+		route.fulfill({ status: 404, body: 'Not found' }),
+	)
+	await page.goto('/history')
+	const history = page.getByRole('region', { name: '読書履歴' })
+	await expect(history.getByRole('listitem')).toHaveCount(1)
+	await expect(history.getByRole('listitem')).toContainText('読み終わり')
+})

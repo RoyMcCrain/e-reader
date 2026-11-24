@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { filterBooks, groupBooks, sortBooks } from '#lib/library/bookshelf'
@@ -16,8 +17,11 @@ export interface BookshelfProps {
 	busyId: string
 	openBook: (book: CloudBook) => void
 	downloadError: string
+	returnFromSeries?: boolean
 }
 
+// In-memory only: lost on reload, never written to storage or the URL.
+let savedShelfScroll: number | undefined
 const coverPalette = [
 	'linear-gradient(145deg,#576f58,#385441)',
 	'linear-gradient(145deg,#866448,#6d5038)',
@@ -461,11 +465,42 @@ const BookshelfHeader = ({ ready, query, setQuery }: BookshelfHeaderProps) => {
 }
 
 const BookshelfContent = (props: BookshelfContentProps) => {
-	const { books, filtered, query, setQuery } = props
+	const { books, filtered, query, setQuery, returnFromSeries } = props
 	const ready = !props.loading && !props.listError
+	const scroller = useRef<HTMLElement>(null)
+	useLayoutEffect(() => {
+		// Any other entry to the shelf drops a stale offset.
+		if (!returnFromSeries) {
+			savedShelfScroll = undefined
+			return
+		}
+		if (!ready || savedShelfScroll === undefined || !scroller.current) return
+		scroller.current.scrollTop = savedShelfScroll
+		savedShelfScroll = undefined
+	}, [returnFromSeries, ready])
+	// Captures the position before the series link's navigation starts.
+	// Plain left clicks only: modified clicks and new tabs stay on the shelf.
+	const rememberSeriesOpen = (event: MouseEvent<HTMLElement>) => {
+		if (
+			event.button !== 0 ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.shiftKey ||
+			event.altKey
+		)
+			return
+		const target = event.target
+		const anchor = target instanceof Element ? target.closest('a') : null
+		if (anchor?.pathname === '/bookshelf/series' && !anchor.target)
+			savedShelfScroll = event.currentTarget.scrollTop
+	}
 	return (
 		<div className={styles.layout}>
-			<main className={styles.page}>
+			<main
+				ref={scroller}
+				className={styles.page}
+				onClickCapture={rememberSeriesOpen}
+			>
 				<BookshelfHeader ready={ready} query={query} setQuery={setQuery} />
 				<div className={styles.intro}>
 					<p className={styles.eyebrow}>あなたの本を、あなたの端末で。</p>
@@ -501,16 +536,29 @@ export const Bookshelf = (props: BookshelfProps) => {
 		() => filterBooks(books, { query, format }),
 		[books, query, format],
 	)
+	// A new filter, sort or search means the saved position no longer applies.
+	const changeQuery = (value: string) => {
+		savedShelfScroll = undefined
+		setQuery(value)
+	}
+	const changeFormat = (value: 'all' | 'epub' | 'zip') => {
+		savedShelfScroll = undefined
+		setFormat(value)
+	}
+	const changeSort = (value: BookSort) => {
+		savedShelfScroll = undefined
+		setSort(value)
+	}
 	return (
 		<BookshelfContent
 			{...props}
 			filtered={filtered}
 			query={query}
-			setQuery={setQuery}
+			setQuery={changeQuery}
 			format={format}
-			setFormat={setFormat}
+			setFormat={changeFormat}
 			sort={sort}
-			setSort={setSort}
+			setSort={changeSort}
 		/>
 	)
 }
