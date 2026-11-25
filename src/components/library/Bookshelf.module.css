@@ -261,25 +261,6 @@
 	color: var(--muted);
 	white-space: nowrap;
 }
-.recent {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: flex-start;
-	gap: 1.25rem 1rem;
-	padding: 0 0 0.5rem;
-}
-.recent .book {
-	flex: 0 0 160px;
-	width: 160px;
-}
-.grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
-	gap: 1.5rem 1.1rem;
-	margin: 0;
-	padding: 0;
-	list-style: none;
-}
 .group {
 	margin-top: 1.5rem;
 }
@@ -444,18 +425,6 @@
 	.section h2 {
 		font-size: 1.15rem;
 	}
-	.recent {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
-		gap: 1rem 0.75rem;
-	}
-	.recent .book {
-		width: 100%;
-	}
-	.grid {
-		grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-		gap: 1.25rem 0.75rem;
-	}
 	.book {
 		min-width: 0;
 	}
@@ -521,17 +490,6 @@
 	.filters .clearButton {
 		grid-column: 1 / -1;
 		width: 100%;
-	}
-	.recent {
-		display: grid;
-	}
-	.recent .book {
-		width: 100%;
-	}
-	.recent,
-	.grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 1rem 0.8rem;
 	}
 	.book {
 		min-width: 0;

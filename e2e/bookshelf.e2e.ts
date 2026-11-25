@@ -185,7 +185,7 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	])
 
 	const recent = page.getByRole('region', { name: '最近アップロードされた本' })
-	const recentBooks = recent.getByRole('button')
+	const recentBooks = recent.getByRole('button', { name: /、(EPUB|ZIP)$/ })
 	await expect(recentBooks).toHaveCount(3)
 	await expect(page.getByLabel('シリーズ', { exact: true })).toHaveCount(0)
 	await expect(recentBooks.nth(0)).toHaveAccessibleName(/別作品/)
@@ -262,9 +262,16 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	expect(recentCard).not.toBeNull()
 	expect(recentCard!.width).toBeGreaterThanOrEqual(140)
 	expect(recentCard!.width).toBeLessThanOrEqual(220)
-	const wrappedCard = await recentBooks.nth(2).boundingBox()
-	expect(wrappedCard).not.toBeNull()
-	expect(wrappedCard!.y).toBeGreaterThan(recentCard!.y + recentCard!.height)
+	const thirdCard = await recentBooks.nth(2).boundingBox()
+	expect(thirdCard).not.toBeNull()
+	expect(thirdCard!.y).toBeCloseTo(recentCard!.y, 0)
+	const recentTrack = await recent
+		.getByRole('list', { name: '最近アップロードされた本の一覧' })
+		.evaluate((track: HTMLElement) => ({
+			client: track.clientWidth,
+			scroll: track.scrollWidth,
+		}))
+	expect(recentTrack.scroll > recentTrack.client).toBe(true)
 	const dimensions = await page.evaluate(() => ({
 		client: document.documentElement.clientWidth,
 		scroll: document.documentElement.scrollWidth,

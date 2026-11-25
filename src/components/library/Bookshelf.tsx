@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { Icon } from '#components/reader/Icon'
@@ -202,11 +202,18 @@ const RecentBooks = ({
 				<span>最大8冊</span>
 			</div>
 			{recent.length ? (
-				<div className={styles.recent}>
+				<Carousel
+					listLabel="最近アップロードされた本の一覧"
+					prevLabel="最近アップロードされた本を前へ"
+					nextLabel="最近アップロードされた本を次へ"
+					itemCount={recent.length}
+				>
 					{recent.map((book) => (
-						<BookshelfBook key={book.id} book={book} {...actions} />
+						<li key={book.id}>
+							<BookshelfBook book={book} {...actions} />
+						</li>
 					))}
-				</div>
+				</Carousel>
 			) : (
 				<p>
 					{books.length
@@ -224,13 +231,21 @@ interface AllBooksProps {
 	sort: BookSort
 }
 
-const SeriesCarousel = ({
-	name,
-	books,
-}: {
-	name: string
-	books: CloudBook[]
-}) => {
+interface CarouselProps {
+	listLabel: string
+	prevLabel: string
+	nextLabel: string
+	itemCount: number
+	children: ReactNode
+}
+
+const Carousel = ({
+	listLabel,
+	prevLabel,
+	nextLabel,
+	itemCount,
+	children,
+}: CarouselProps) => {
 	const track = useRef<HTMLUListElement>(null)
 	const [scrollState, setScrollState] = useState('none')
 	useEffect(() => {
@@ -258,7 +273,7 @@ const SeriesCarousel = ({
 			observer.disconnect()
 			cancelAnimationFrame(frame)
 		}
-	}, [books])
+	}, [itemCount])
 	const scroll = (direction: number) =>
 		track.current?.scrollBy({
 			left: direction * track.current.clientWidth * 0.8,
@@ -267,23 +282,19 @@ const SeriesCarousel = ({
 		<div className={styles.carousel}>
 			{scrollState !== 'none' && (
 				<button
-					aria-label={`${name}を前へ`}
+					aria-label={prevLabel}
 					disabled={scrollState === 'start'}
 					onClick={() => scroll(-1)}
 				>
 					‹
 				</button>
 			)}
-			<ul ref={track} aria-label={`${name}の本`}>
-				{books.map((book) => (
-					<li key={book.id}>
-						<SeriesBook book={book} />
-					</li>
-				))}
+			<ul ref={track} aria-label={listLabel}>
+				{children}
 			</ul>
 			{scrollState !== 'none' && (
 				<button
-					aria-label={`${name}を次へ`}
+					aria-label={nextLabel}
 					disabled={scrollState === 'end'}
 					onClick={() => scroll(1)}
 				>
@@ -294,18 +305,48 @@ const SeriesCarousel = ({
 	)
 }
 
+const SeriesCarousel = ({
+	name,
+	books,
+}: {
+	name: string
+	books: CloudBook[]
+}) => (
+	<Carousel
+		listLabel={`${name}の本`}
+		prevLabel={`${name}を前へ`}
+		nextLabel={`${name}を次へ`}
+		itemCount={books.length}
+	>
+		{books.map((book) => (
+			<li key={book.id}>
+				<SeriesBook book={book} />
+			</li>
+		))}
+	</Carousel>
+)
+
 const AllBooksContent = ({ books, filtered, sort }: AllBooksProps) => {
 	if (books.length === 0) return <p>本はありません。</p>
 	if (filtered.length === 0) return <p>条件に合う本はありません。</p>
 
-	if (sort !== 'series')
+	if (sort !== 'series') {
+		const sorted = sortBooks(filtered, sort)
 		return (
-			<div className={styles.grid}>
-				{sortBooks(filtered, sort).map((book) => (
-					<SeriesBook key={book.id} book={book} />
+			<Carousel
+				listLabel="すべての本の一覧"
+				prevLabel="すべての本を前へ"
+				nextLabel="すべての本を次へ"
+				itemCount={sorted.length}
+			>
+				{sorted.map((book) => (
+					<li key={book.id}>
+						<SeriesBook book={book} />
+					</li>
 				))}
-			</div>
+			</Carousel>
 		)
+	}
 
 	return groupBooks(filtered).map((group) => (
 		<section
