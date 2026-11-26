@@ -77,6 +77,17 @@ describe('last reader session', () => {
 		expect(readLastSession()).toBeUndefined()
 	})
 
+	test('a finished book clears the stored session instead of storing it', () => {
+		// Arrange
+		const values = memoryStorage()
+		writeLastSession({ bookId, name: 'book.zip', format: 'zip' })
+		// Act
+		writeLastSession({ bookId, name: 'book.zip', format: 'zip', atEnd: true })
+		// Assert
+		expect(values.has(LAST_SESSION_KEY)).toBe(false)
+		expect(readLastSession()).toBeUndefined()
+	})
+
 	test('clears the stored session', () => {
 		// Arrange
 		memoryStorage()

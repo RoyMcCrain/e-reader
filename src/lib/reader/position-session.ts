@@ -12,6 +12,7 @@ export type PositionSessionResult = {
 	status: string
 	remote?: RemotePosition
 	conflict?: RemotePosition | null
+	moved?: true
 }
 
 interface PositionSessionOptions {
@@ -119,7 +120,9 @@ const finishRemoteAdoption = async ({
 		return { status: '読書位置を保存できません。' }
 	}
 	if (!adopted) return rejectedAdoption({ options, checkpoint, remote, moved })
-	return { status: moved ? '別端末の位置に移動しました。' : 'synced' }
+	return moved
+		? { status: '別端末の位置に移動しました。', moved: true }
+		: { status: 'synced' }
 }
 
 const resolveRemote = async ({

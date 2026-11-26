@@ -593,6 +593,20 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
 	await expect
 		.poll(async () => `${await text('primary')}|${await text('secondary')}`)
 		.toContain('P1|P2')
+
+	await turnPage(page, true)
+	await expect.poll(() => text('primary')).toContain('P3')
+	await revealReader(page)
+	await page.getByRole('button', { name: '本を閉じる' }).click()
+	await expect
+		.poll(() =>
+			page.evaluate(
+				(key) => localStorage.getItem(key),
+				'shiori.reader.last-session.v1',
+			),
+		)
+		.toBeNull()
+	await expect(page.getByRole('region', { name: '前回の続き' })).toHaveCount(0)
 })
 
 const openSpreadEpub = async (

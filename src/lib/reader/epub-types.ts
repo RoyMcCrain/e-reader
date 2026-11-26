@@ -17,7 +17,7 @@ export interface EpubOptions {
 	signal: AbortSignal
 	onLocation: (location: ReaderLocation) => void
 	initialCFI?: string
-	onConfirmedPosition?: (cfi: string) => void
+	onConfirmedPosition?: (cfi: string, atEnd: boolean) => void
 	onError: (error: Error) => void
 }
 

@@ -83,7 +83,7 @@ const CloudResume = ({
 				disabled={busy}
 				onClick={() => void open()}
 			>
-				クラウドから開く
+				続きを読む
 			</button>
 			{error && (
 				<p role="alert" className={styles.error}>
