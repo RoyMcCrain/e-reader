@@ -1,18 +1,41 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 
-import { turnPage } from './reader-actions'
+import { revealReader, turnPage } from './reader-actions'
 
+type PageSide = 'left' | 'right' | 'center'
+type FixedBook = {
+	pages?: number
+	rtl?: boolean
+	sides?: (PageSide | undefined)[]
+	toc?: { label: string; href: string }[]
+}
+const pageColors = ['#e02020', '#2040e0', '#20a040', '#e0a020', '#8020c0']
+const pageAccents = ['#f0a020', '#20d0e0', '#d020c0', '#20e070', '#f04080']
+const sideProperty = (side: PageSide | undefined) => {
+	if (!side) return ''
+	if (side === 'center') return ' properties="rendition:page-spread-center"'
+	return ` properties="page-spread-${side}"`
+}
 const makeFixedEpub = async (
 	imageStyle = 'width:100%;height:100%;object-fit:contain',
+	book: FixedBook = {},
 ) => {
 	const writer = new ZipWriter(new BlobWriter())
-	const pages = ['P1', 'P2', 'P3']
+	const pages = Array.from(
+		{ length: book.pages ?? 3 },
+		(_, index) => `P${index + 1}`,
+	)
 	const files: Record<string, string> = {
 		mimetype: 'application/epub+zip',
 		'META-INF/container.xml':
 			'<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
-		'book.opf': `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="fixed">fixed</dc:identifier><dc:title>Fixed</dc:title><dc:language>ja</dc:language><meta property="rendition:layout">pre-paginated</meta></metadata><manifest>${pages.map((page, index) => `<item id="p${index}" href="${page}.xhtml" media-type="application/xhtml+xml"/><item id="i${index}" href="${page}.svg" media-type="image/svg+xml"/>`).join('')}</manifest><spine>${pages.map((page, index) => `<itemref idref="p${index}"/>`).join('')}</spine></package>`,
+		'book.opf': `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="fixed">fixed</dc:identifier><dc:title>Fixed</dc:title><dc:language>ja</dc:language><meta property="rendition:layout">pre-paginated</meta></metadata><manifest>${pages.map((page, index) => `<item id="p${index}" href="${page}.xhtml" media-type="application/xhtml+xml"/><item id="i${index}" href="${page}.svg" media-type="image/svg+xml"/>`).join('')}${book.toc ? '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>' : ''}</manifest><spine${book.rtl ? ' page-progression-direction="rtl"' : ''}>${pages.map((page, index) => `<itemref idref="p${index}"${sideProperty(book.sides?.[index])}/>`).join('')}</spine></package>`,
+		...(book.toc
+			? {
+					'nav.xhtml': `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>${book.toc.map(({ label, href }) => `<li><a href="${href}">${label}</a></li>`).join('')}</ol></nav></body></html>`,
+				}
+			: {}),
 		...Object.fromEntries(
 			pages.map((page) => [
 				`${page}.xhtml`,
@@ -22,7 +45,7 @@ const makeFixedEpub = async (
 		...Object.fromEntries(
 			pages.map((page, index) => [
 				`${page}.svg`,
-				`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="${['#e02020', '#2040e0', '#20a040'][index]}"/><path d="M0 0h300v800H0z" fill="${['#f0a020', '#20d0e0', '#d020c0'][index]}"/><circle cx="450" cy="200" r="100" fill="white"/></svg>`,
+				`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="${pageColors[index]}"/><path d="M0 0h300v800H0z" fill="${pageAccents[index]}"/><circle cx="450" cy="200" r="100" fill="white"/></svg>`,
 			]),
 		),
 	}
@@ -570,4 +593,146 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
 	await expect
 		.poll(async () => `${await text('primary')}|${await text('secondary')}`)
 		.toContain('P1|P2')
+})
+
+const openSpreadEpub = async (
+	page: import('@playwright/test').Page,
+	book: FixedBook,
+	settings: { spread: 'auto'; firstPageSingle: boolean },
+) => {
+	await page.setViewportSize({ width: 900, height: 900 })
+	await page.addInitScript(
+		(value) =>
+			localStorage.setItem('shiori.reader.settings.v1', JSON.stringify(value)),
+		settings,
+	)
+	await page.goto('/bookshelf')
+	await page.waitForLoadState('networkidle')
+	const file = {
+		name: 'fixed.epub',
+		mimeType: 'application/epub+zip',
+		buffer: Buffer.from(await makeFixedEpub(undefined, book)),
+	}
+	await page.locator('input[type=file]').setInputFiles(file)
+	await expect
+		.poll(() =>
+			page
+				.locator('[data-reader-page="primary"] foliate-view')
+				.evaluate((element) =>
+					Boolean((element as HTMLElement & { renderer?: unknown }).renderer),
+				),
+		)
+		.toBe(true)
+	await expect(
+		page.getByText('本を開いています…', { exact: true }),
+	).toBeHidden()
+	return file
+}
+
+// Visible synthetic pages ordered by physical x, so RTL slots read left to right.
+const shownPages = (page: import('@playwright/test').Page) =>
+	page.evaluate(() =>
+		[...document.querySelectorAll<HTMLElement>('[data-reader-page]')]
+			.flatMap((pane) => {
+				const view = pane.querySelector('foliate-view') as
+					| (HTMLElement & {
+							renderer?: { getContents(): { doc: Document }[] }
+					  })
+					| null
+				const image = view?.renderer?.getContents()[0]?.doc.querySelector('img')
+				const frame = image?.ownerDocument.defaultView?.frameElement
+				if (!image || !frame) return []
+				if (getComputedStyle(frame).visibility === 'hidden') return []
+				return [
+					{
+						alt: image.alt,
+						x:
+							frame.getBoundingClientRect().left +
+							image.getBoundingClientRect().left,
+					},
+				]
+			})
+			.sort((a, b) => a.x - b.x)
+			.map(({ alt, x }) => ({ alt, x: Math.round(x) })),
+	)
+const shownAlts = async (page: import('@playwright/test').Page) =>
+	(await shownPages(page)).map(({ alt }) => alt)
+
+test('fixed-layout EPUB keeps P2/P3 paired across width changes and reopening', async ({
+	page,
+}) => {
+	const file = await openSpreadEpub(
+		page,
+		{ pages: 5 },
+		{ spread: 'auto', firstPageSingle: true },
+	)
+	await expect.poll(() => shownAlts(page)).toEqual(['P1'])
+	await turnPage(page, true)
+	await expect.poll(() => shownAlts(page)).toEqual(['P2', 'P3'])
+	await page.setViewportSize({ width: 500, height: 900 })
+	await expect.poll(() => shownAlts(page)).toEqual(['P2'])
+	await turnPage(page, true)
+	await expect.poll(() => shownAlts(page)).toEqual(['P3'])
+	await page.setViewportSize({ width: 900, height: 900 })
+	await expect.poll(() => shownAlts(page)).toEqual(['P2', 'P3'])
+	await page.setViewportSize({ width: 500, height: 900 })
+	await expect.poll(() => shownAlts(page)).toEqual(['P3'])
+
+	await page.setViewportSize({ width: 900, height: 900 })
+	await page.reload()
+	await page
+		.getByRole('region', { name: '前回の続き' })
+		.locator('input[type=file]')
+		.setInputFiles(file)
+	await expect.poll(() => shownAlts(page)).toEqual(['P2', 'P3'])
+})
+
+test('fixed-layout EPUB TOC to a broken link keeps the visible P3 position', async ({
+	page,
+}) => {
+	await openSpreadEpub(
+		page,
+		{
+			pages: 3,
+			toc: [
+				{ label: 'P3 entry', href: 'P3.xhtml' },
+				{ label: 'Broken entry', href: 'missing.xhtml' },
+			],
+		},
+		{ spread: 'auto', firstPageSingle: true },
+	)
+	const openToc = async () => {
+		await revealReader(page)
+		await page.getByRole('button', { name: '目次', exact: true }).click()
+		return page.getByRole('navigation', { name: '目次' })
+	}
+	await expect.poll(() => shownAlts(page)).toEqual(['P1'])
+	await (await openToc()).getByRole('button', { name: 'P3 entry' }).click()
+	await expect.poll(() => shownAlts(page)).toEqual(['P2', 'P3'])
+	await (await openToc()).getByRole('button', { name: 'Broken entry' }).click()
+	await page.setViewportSize({ width: 500, height: 900 })
+	await expect.poll(() => shownAlts(page)).toEqual(['P3'])
+})
+
+test('RTL fixed-layout EPUB places explicit left and right pages in their physical slots', async ({
+	page,
+}) => {
+	await openSpreadEpub(
+		page,
+		{
+			pages: 3,
+			rtl: true,
+			sides: ['left', 'right', 'left'],
+		},
+		{ spread: 'auto', firstPageSingle: false },
+	)
+	await expect
+		.poll(() => shownPages(page))
+		.toEqual([{ alt: 'P1', x: expect.any(Number) }])
+	expect((await shownPages(page))[0].x).toBeLessThan(450)
+	await turnPage(page, true)
+	await expect.poll(() => shownAlts(page)).toEqual(['P3', 'P2'])
+	const [left, right] = await shownPages(page)
+	expect(left.x).toBeLessThan(450)
+	expect(right.x).toBeGreaterThan(450)
 })

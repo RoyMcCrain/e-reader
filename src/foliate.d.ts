@@ -8,6 +8,7 @@ declare module 'foliate-js/epub.js' {
 		linear?: string
 		href: string
 		cfi?: string
+		pageSpread?: 'left' | 'right' | 'center'
 	}
 	export interface EpubBook {
 		dir: string
@@ -66,7 +67,7 @@ declare module 'foliate-js/view.js' {
 		}): Promise<void>
 		next(): Promise<void>
 		prev(): Promise<void>
-		goTo(href: string): Promise<void>
+		goTo(href: string): Promise<{ index: number } | null | undefined>
 		close(): void
 		lastLocation?: FoliateLocation
 		renderer?: FoliateRenderer | null
