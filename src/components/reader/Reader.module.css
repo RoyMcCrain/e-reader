@@ -103,6 +103,7 @@
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: flex-end;
+	direction: ltr;
 	gap: 8px;
 	min-height: 18px;
 	color: #465541;
