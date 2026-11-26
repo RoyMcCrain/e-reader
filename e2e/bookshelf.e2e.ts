@@ -657,7 +657,7 @@ test('recently uploaded covers open the reader directly and close back to the sh
 	const footer = page.getByRole('contentinfo', {
 		name: '本棚の絞り込みと表示設定',
 	})
-	await recent.getByRole('button', { name: /別作品/ }).click()
+	await recent.getByRole('button', { name: '別作品.zip、ZIP' }).click()
 	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
 	await expect(footer).toBeHidden()
 	await expect(page.getByRole('region', { name: 'すべての本' })).toHaveCount(0)
@@ -711,4 +711,50 @@ test('long shelf returns to the top with a back-to-top button at phone width', a
 	await expect(backToTop).toBeHidden()
 	await expect(scroller).toBeFocused()
 	expect(page.url()).toBe(url)
+})
+
+test('offline saves open from the shelf without network', async ({ page }) => {
+	const archive = await makeZip()
+	const book = {
+		id: 'f'.repeat(64),
+		name: 'オフライン.zip',
+		format: 'zip',
+		size: archive.length,
+		uploadedAt: '2024-01-01T00:00:00Z',
+	}
+	await mockLibrary(page, [book], archive)
+	await page.goto('/bookshelf')
+	const saveName = `${book.name}を後で読むために保存`
+	const savedName = `${book.name}の保存済みを取り消す`
+	// すべての本と最近アップロードの両方に保存ボタンが出る。
+	await expect(page.getByRole('button', { name: saveName })).toHaveCount(2)
+	await page.getByRole('button', { name: saveName }).first().click()
+	await expect(page.getByRole('button', { name: savedName })).toHaveCount(2)
+	const shelf = page.getByRole('region', { name: '後で読む' })
+	await expect(shelf).toBeVisible()
+
+	// 本棚の絞り込みは後で読むにも連動する。
+	await page.getByRole('button', { name: '検索', exact: true }).click()
+	await page.getByLabel('タイトル・シリーズで検索').fill('存在しない本')
+	await expect(shelf).toHaveCount(0)
+	await page.getByRole('button', { name: '条件をクリア' }).click()
+	await expect(shelf).toBeVisible()
+
+	try {
+		await page.context().setOffline(true)
+		await page.route('**/api/books/**', (route) => route.abort())
+		await shelf.getByRole('button', { name: `${book.name}、ZIP` }).click()
+		await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
+		await page.getByRole('button', { name: '本を閉じる' }).click()
+		await expect(page.getByRole('heading', { name: '本棚' })).toBeVisible()
+	} finally {
+		await page.context().setOffline(false)
+	}
+
+	// 削除すると棚が消え、両方の保存ボタンが元に戻る。
+	await shelf
+		.getByRole('button', { name: `${book.name}を後で読むから削除` })
+		.click()
+	await expect(shelf).toHaveCount(0)
+	await expect(page.getByRole('button', { name: saveName })).toHaveCount(2)
 })

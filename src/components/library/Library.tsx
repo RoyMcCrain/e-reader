@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 import { Bookshelf, BookshelfBook } from '#components/library/Bookshelf'
@@ -7,6 +7,13 @@ import { History } from '#components/library/History'
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { latestReadBook, sortBooks } from '#lib/library/bookshelf'
 import { parseAuthorName, validBookMetadata } from '#lib/library/metadata'
+import {
+	listOfflineSaves,
+	loadOfflineFile,
+	removeOfflineBook,
+	saveOfflineBook,
+} from '#lib/library/offline-books'
+import type { OfflineSave } from '#lib/library/offline-books'
 import { fetchRecency } from '#lib/library/recency'
 import type { CloudBook } from '#lib/library/types'
 
@@ -95,25 +102,33 @@ const loadBooks = async (
 	}
 }
 
+const mimeType = (format: CloudBook['format']) =>
+	format === 'epub' ? 'application/epub+zip' : 'application/zip'
+
+const downloadBlob = async (
+	book: CloudBook,
+	signal: AbortSignal,
+): Promise<Blob> => {
+	const response = await fetch(`/api/books/${encodeURIComponent(book.id)}`, {
+		credentials: 'same-origin',
+		signal,
+	})
+	const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+	if (!response.ok || !contentType.includes(mimeType(book.format))) {
+		await response.body?.cancel()
+		throw new Error('download')
+	}
+	return response.blob()
+}
+
 const downloadBook = async (
 	book: CloudBook,
 	controller: AbortController,
 	setFile: (file: File) => void,
 ) => {
-	const response = await fetch(`/api/books/${encodeURIComponent(book.id)}`, {
-		credentials: 'same-origin',
-		signal: controller.signal,
-	})
-	const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
-	const expectedType =
-		book.format === 'epub' ? 'application/epub+zip' : 'application/zip'
-	if (!response.ok || !contentType.includes(expectedType)) {
-		await response.body?.cancel()
-		throw new Error('download')
-	}
-	const blob = await response.blob()
+	const blob = await downloadBlob(book, controller.signal)
 	if (!controller.signal.aborted)
-		setFile(new File([blob], book.name, { type: expectedType }))
+		setFile(new File([blob], book.name, { type: mimeType(book.format) }))
 }
 
 interface LibraryStateProps {
@@ -185,6 +200,22 @@ interface DownloadActions {
 	setFile: (file: File) => void
 }
 
+const downloadFailed =
+	'本をダウンロードできませんでした。通信状況を確認して、もう一度お試しください。'
+const offlineSaveFailed =
+	'オフライン保存に失敗しました。通信状況を確認して、もう一度お試しください。'
+
+const openSavedOrFail = async (
+	book: CloudBook,
+	actions: DownloadActions,
+	signal: AbortSignal,
+) => {
+	const saved = await loadOfflineFile(book.id).catch(() => undefined)
+	if (signal.aborted) return
+	if (saved) actions.setFile(saved)
+	else actions.setDownloadError(downloadFailed)
+}
+
 const openCloudBook = async (
 	book: CloudBook,
 	actions: DownloadActions,
@@ -198,12 +229,65 @@ const openCloudBook = async (
 		await downloadBook(book, controller, actions.setFile)
 	} catch {
 		if (!controller.signal.aborted)
-			actions.setDownloadError(
-				'本をダウンロードできませんでした。通信状況を確認して、もう一度お試しください。',
-			)
+			await openSavedOrFail(book, actions, controller.signal)
 	} finally {
 		if (!controller.signal.aborted) actions.setBusyId('')
 	}
+}
+
+// Saved state lives in IndexedDB; this hook keeps the shelf's view in step with it.
+const useOfflineSaves = (setDownloadError: (message: string) => void) => {
+	const [savedBooks, setSavedBooks] = useState<OfflineSave[]>([])
+	const [saveBusyId, setSaveBusyId] = useState('')
+	const inFlight = useRef(new Set<string>())
+	const reloadId = useRef(0)
+	const reloadSaves = useCallback(() => {
+		reloadId.current += 1
+		const current = reloadId.current
+		void listOfflineSaves().then(
+			(saves) => {
+				if (reloadId.current === current) setSavedBooks(saves)
+			},
+			() => {
+				if (reloadId.current === current) setSavedBooks([])
+			},
+		)
+	}, [])
+	useEffect(() => {
+		reloadSaves()
+	}, [reloadSaves])
+	const settle = async (bookId: string, action: () => Promise<void>) => {
+		if (inFlight.current.has(bookId)) return
+		inFlight.current.add(bookId)
+		setSaveBusyId(bookId)
+		setDownloadError('')
+		try {
+			await action()
+		} catch {
+			setDownloadError(offlineSaveFailed)
+		} finally {
+			inFlight.current.delete(bookId)
+			setSaveBusyId((current) => (current === bookId ? '' : current))
+			reloadSaves()
+		}
+	}
+	const removeSave = (bookId: string) =>
+		void settle(bookId, () => removeOfflineBook(bookId))
+	const saveBook = (book: CloudBook) =>
+		void settle(book.id, async () =>
+			saveOfflineBook(
+				book,
+				await downloadBlob(book, new AbortController().signal),
+			),
+		)
+	const toggleSave = (book: CloudBook) => {
+		if (savedBooks.some((save) => save.bookId === book.id)) {
+			removeSave(book.id)
+		} else {
+			saveBook(book)
+		}
+	}
+	return { savedBooks, saveBusyId, toggleSave, removeSave }
 }
 
 interface SeriesDetailsProps {
@@ -386,6 +470,9 @@ export const Library = ({
 	const [busyId, setBusyId] = useState('')
 	const [downloadError, setDownloadError] = useState('')
 	const listController = useRef<AbortController | null>(null)
+	const { savedBooks, saveBusyId, toggleSave, removeSave } =
+		useOfflineSaves(setDownloadError)
+	const savedIds = new Set(savedBooks.map((save) => save.bookId))
 
 	useEffect(() => {
 		const controller = new AbortController()
@@ -421,6 +508,19 @@ export const Library = ({
 				openBook={openBook}
 				downloadError={downloadError}
 				returnFromSeries={returnFromSeries}
+				savedIds={savedIds}
+				saveBusyId={saveBusyId}
+				onToggleSave={toggleSave}
+				savedBooks={savedBooks}
+				onRemoveSave={removeSave}
+				onOpenSave={(save) =>
+					openBook({
+						id: save.bookId,
+						name: save.name,
+						format: save.format,
+						size: save.size,
+					})
+				}
 			/>
 		)
 
