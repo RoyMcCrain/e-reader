@@ -6,6 +6,7 @@ import { useReaderApp } from '#components/providers/ReaderProvider'
 import { Icon } from '#components/reader/Icon'
 import { filterBooks, groupBooks, sortBooks } from '#lib/library/bookshelf'
 import type { BookSort } from '#lib/library/bookshelf'
+import type { OfflineSave } from '#lib/library/offline-books'
 import type { CloudBook } from '#lib/library/types'
 
 import styles from '#components/library/Bookshelf.module.css'
@@ -19,6 +20,15 @@ export interface BookshelfProps {
 	openBook: (book: CloudBook) => void
 	downloadError: string
 	returnFromSeries?: boolean
+}
+
+export interface BookshelfSaveProps {
+	savedIds: Set<string>
+	saveBusyId: string
+	onToggleSave: (book: CloudBook) => void
+	savedBooks: OfflineSave[]
+	onRemoveSave: (id: string) => void
+	onOpenSave: (save: OfflineSave) => void
 }
 
 // In-memory only: lost on reload, never written to storage or the URL.
@@ -79,6 +89,64 @@ export const BookshelfBook = ({
 	>
 		<BookCover book={book} />
 	</button>
+)
+
+interface SaveProps {
+	savedIds?: Set<string>
+	saveBusyId?: string
+	onToggleSave?: (book: CloudBook) => void
+}
+
+const saveLabel = (saved: boolean, busy: boolean) => {
+	if (busy) return '保存中…'
+	return saved ? '保存済み' : '後で読む'
+}
+const saveName = (book: CloudBook, saved: boolean) =>
+	saved
+		? `${book.name}の保存済みを取り消す`
+		: `${book.name}を後で読むために保存`
+
+const SaveButton = ({
+	book,
+	saved,
+	busy,
+	onToggle,
+}: {
+	book: CloudBook
+	saved: boolean
+	busy: boolean
+	onToggle: (book: CloudBook) => void
+}) => (
+	<button
+		type="button"
+		className={styles.saveButton}
+		aria-label={saveName(book, saved)}
+		disabled={busy}
+		onClick={() => onToggle(book)}
+	>
+		{saveLabel(saved, busy)}
+	</button>
+)
+
+// The save button is a sibling of the card link/button, never nested inside it.
+const ShelfItem = ({
+	book,
+	savedIds,
+	saveBusyId,
+	onToggleSave,
+	children,
+}: SaveProps & { book: CloudBook; children: ReactNode }) => (
+	<li className={onToggleSave ? styles.cardCell : undefined}>
+		{children}
+		{onToggleSave && (
+			<SaveButton
+				book={book}
+				saved={savedIds?.has(book.id) ?? false}
+				busy={saveBusyId === book.id}
+				onToggle={onToggleSave}
+			/>
+		)}
+	</li>
 )
 
 export const SeriesBook = ({
@@ -189,8 +257,10 @@ export const LocalFileButton = () => {
 
 const RecentBooks = ({
 	books,
-	...actions
-}: BookActions & { books: CloudBook[] }) => {
+	busyId,
+	openBook,
+	...save
+}: BookActions & SaveProps & { books: CloudBook[] }) => {
 	const recent = sortBooks(
 		books.filter((book) => book.uploadedAt),
 		'newest',
@@ -209,9 +279,9 @@ const RecentBooks = ({
 					itemCount={recent.length}
 				>
 					{recent.map((book) => (
-						<li key={book.id}>
-							<BookshelfBook book={book} {...actions} />
-						</li>
+						<ShelfItem key={book.id} book={book} {...save}>
+							<BookshelfBook book={book} busyId={busyId} openBook={openBook} />
+						</ShelfItem>
 					))}
 				</Carousel>
 			) : (
@@ -225,7 +295,7 @@ const RecentBooks = ({
 	)
 }
 
-interface AllBooksProps {
+interface AllBooksProps extends SaveProps {
 	books: CloudBook[]
 	filtered: CloudBook[]
 	sort: BookSort
@@ -304,7 +374,8 @@ const Carousel = ({
 const SeriesCarousel = ({
 	name,
 	books,
-}: {
+	...save
+}: SaveProps & {
 	name: string
 	books: CloudBook[]
 }) => (
@@ -315,14 +386,14 @@ const SeriesCarousel = ({
 		itemCount={books.length}
 	>
 		{books.map((book) => (
-			<li key={book.id}>
+			<ShelfItem key={book.id} book={book} {...save}>
 				<SeriesBook book={book} />
-			</li>
+			</ShelfItem>
 		))}
 	</Carousel>
 )
 
-const AllBooksContent = ({ books, filtered, sort }: AllBooksProps) => {
+const AllBooksContent = ({ books, filtered, sort, ...save }: AllBooksProps) => {
 	if (books.length === 0) return <p>本はありません。</p>
 	if (filtered.length === 0) return <p>条件に合う本はありません。</p>
 
@@ -336,9 +407,9 @@ const AllBooksContent = ({ books, filtered, sort }: AllBooksProps) => {
 				itemCount={sorted.length}
 			>
 				{sorted.map((book) => (
-					<li key={book.id}>
+					<ShelfItem key={book.id} book={book} {...save}>
 						<SeriesBook book={book} />
-					</li>
+					</ShelfItem>
 				))}
 			</Carousel>
 		)
@@ -361,6 +432,7 @@ const AllBooksContent = ({ books, filtered, sort }: AllBooksProps) => {
 			<SeriesCarousel
 				name={group.series ?? 'シリーズ未設定'}
 				books={group.books}
+				{...save}
 			/>
 		</section>
 	))
@@ -373,7 +445,7 @@ const AllBooks = (props: AllBooksProps) => (
 	</section>
 )
 
-interface BookshelfContentProps extends BookshelfProps {
+interface BookshelfContentProps extends BookshelfProps, BookshelfSaveProps {
 	filtered: CloudBook[]
 	query: string
 	setQuery: (value: string) => void
@@ -409,35 +481,127 @@ export const LibraryStateMessage = ({
 	)
 }
 
-const BookshelfResults = ({
-	books,
-	loading,
-	listError,
-	retry,
+const toCloudBook = (save: OfflineSave): CloudBook => ({
+	id: save.bookId,
+	name: save.name,
+	format: save.format,
+	size: save.size,
+})
+
+const OfflineShelf = ({
+	savedBooks,
 	busyId,
-	openBook,
-	downloadError,
-	filtered,
-	sort,
-}: BookshelfContentProps) => (
-	<>
-		<LibraryStateMessage
-			loading={loading}
-			listError={listError}
-			retry={retry}
-		/>
-		{!loading && !listError && (
-			<>
-				<div className={styles.shelves}>
-					<AllBooks books={books} filtered={filtered} sort={sort} />
-					<RecentBooks books={filtered} busyId={busyId} openBook={openBook} />
-				</div>
-				{busyId && <output>本をダウンロードしています…</output>}
-				{downloadError && <p role="alert">{downloadError}</p>}
-			</>
-		)}
-	</>
-)
+	onOpenSave,
+	onRemoveSave,
+	query,
+	format,
+}: Pick<
+	BookshelfContentProps,
+	'savedBooks' | 'busyId' | 'onOpenSave' | 'onRemoveSave'
+> &
+	Pick<BookshelfContentProps, 'query' | 'format'>) => {
+	const matchedIds = new Set(
+		filterBooks(savedBooks.map(toCloudBook), { query, format }).map(
+			(book) => book.id,
+		),
+	)
+	const visibleSaves = savedBooks.filter((save) => matchedIds.has(save.bookId))
+	if (visibleSaves.length === 0) return null
+	return (
+		<section className={styles.section} aria-labelledby="offline-heading">
+			<h2 id="offline-heading">後で読む</h2>
+			<ul className={styles.grid}>
+				{visibleSaves.map((save) => (
+					<li key={save.bookId}>
+						<button
+							type="button"
+							className={styles.book}
+							aria-label={`${save.name}、${save.format.toUpperCase()}`}
+							disabled={Boolean(busyId)}
+							onClick={() => onOpenSave(save)}
+						>
+							<BookCover
+								book={{
+									id: save.bookId,
+									name: save.name,
+									format: save.format,
+									size: save.size,
+								}}
+							/>
+						</button>
+						<button
+							type="button"
+							className={styles.removeButton}
+							aria-label={`${save.name}を後で読むから削除`}
+							disabled={Boolean(busyId)}
+							onClick={() => onRemoveSave(save.bookId)}
+						>
+							削除
+						</button>
+					</li>
+				))}
+			</ul>
+		</section>
+	)
+}
+
+const BookshelfResults = (props: BookshelfContentProps) => {
+	const {
+		books,
+		loading,
+		listError,
+		retry,
+		busyId,
+		openBook,
+		downloadError,
+		filtered,
+		sort,
+		savedBooks,
+		onOpenSave,
+		onRemoveSave,
+		query,
+		format,
+	} = props
+	const save = {
+		savedIds: props.savedIds,
+		saveBusyId: props.saveBusyId,
+		onToggleSave: props.onToggleSave,
+	}
+	return (
+		<>
+			<LibraryStateMessage
+				loading={loading}
+				listError={listError}
+				retry={retry}
+			/>
+			{!loading && savedBooks.length > 0 && (
+				<OfflineShelf
+					savedBooks={savedBooks}
+					busyId={busyId}
+					onOpenSave={onOpenSave}
+					onRemoveSave={onRemoveSave}
+					query={query}
+					format={format}
+				/>
+			)}
+			{!loading && !listError && (
+				<>
+					<div className={styles.shelves}>
+						<AllBooks books={books} filtered={filtered} sort={sort} {...save} />
+						<RecentBooks
+							books={filtered}
+							busyId={busyId}
+							openBook={openBook}
+							{...save}
+						/>
+					</div>
+				</>
+			)}
+			{busyId && <output>本をダウンロードしています…</output>}
+			{downloadError && <p role="alert">{downloadError}</p>}
+		</>
+	)
+}
 
 const searchPanelId = 'bookshelf-search-panel'
 
@@ -602,7 +766,7 @@ const BookshelfContent = (props: BookshelfContentProps) => {
 	)
 }
 
-export const Bookshelf = (props: BookshelfProps) => {
+export const Bookshelf = (props: BookshelfProps & BookshelfSaveProps) => {
 	const { books } = props
 	const [query, setQuery] = useState('')
 	const [format, setFormat] = useState<'all' | 'epub' | 'zip'>('all')

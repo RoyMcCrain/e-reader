@@ -424,6 +424,48 @@
 	opacity: 0.55;
 	cursor: wait;
 }
+.cardCell {
+	position: relative;
+}
+.saveButton {
+	position: absolute;
+	top: 0.25rem;
+	inset-inline-end: 0.25rem;
+	min-height: 1.9rem;
+	padding: 0 0.6rem;
+	border: 1px solid var(--accent);
+	border-radius: 999px;
+	background: var(--paper);
+	color: var(--accent);
+	font-size: 0.75rem;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.saveButton[aria-pressed='true'] {
+	background: var(--accent);
+	color: #fff;
+}
+.saveButton:disabled {
+	opacity: 0.55;
+	cursor: wait;
+}
+.removeButton {
+	min-height: 1.9rem;
+	padding: 0 0.6rem;
+	border: 1px solid var(--accent);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--accent);
+	font-size: 0.75rem;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.removeButton:disabled {
+	opacity: 0.55;
+	cursor: wait;
+}
 @media (min-width: 640px) and (max-width: 1023px) {
 	.page,
 	.footer {
