@@ -10,6 +10,12 @@ import { collapse } from 'foliate-js/epubcfi.js'
 import type { FoliateViewElement, FoliateRenderer } from 'foliate-js/view.js'
 
 import {
+	adjacentFixedGroup,
+	fixedGroupIndex,
+	fixedSpreadGroups,
+	type FixedSlot,
+} from '#lib/reader/epub-fixed-spreads'
+import {
 	awaitContentLayout,
 	awaitOwned,
 	awaitWithAbort,
@@ -111,6 +117,13 @@ const setPaneStyles = (pane: Pane, settings: ReaderSettings) => {
 	renderer.style.cssText =
 		'width:100%;height:100%;max-width:none;max-height:none;'
 	renderer.setStyles?.(stylesFor(settings))
+}
+const placeFixedPane = (pane: Pane, slot: FixedSlot) => {
+	const centered = slot === 'center'
+	const column = slot === 'trailing' ? '2' : '1'
+	pane.wrapper.style.gridRow = '1'
+	pane.wrapper.style.gridColumn = centered ? '1 / -1' : column
+	pane.wrapper.style.justifySelf = centered ? 'center' : ''
 }
 const sectionLinear = (book: EpubBook, index: number) =>
 	book.sections[index]?.linear !== 'no'
@@ -253,10 +266,6 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		options.onLocation(loc)
 		return loc
 	}
-	const confirmPosition = () => {
-		const atEnd = notify()?.atEnd ?? false
-		if (readingAnchor) options.onConfirmedPosition?.(readingAnchor, atEnd)
-	}
 	const enqueue = (operation: () => Promise<void>, propagate = false) => {
 		const task = queued.then(async () => {
 			if (alive()) await operation()
@@ -273,6 +282,11 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 	}
 	const rememberAnchor = (cfi = panes[0]?.view.lastLocation?.cfi) => {
 		if (cfi) readingAnchor = collapse(cfi)
+	}
+	const confirmPosition = (changed = true) => {
+		const atEnd = notify()?.atEnd ?? false
+		if (changed && readingAnchor)
+			options.onConfirmedPosition?.(readingAnchor, atEnd)
 	}
 	const layout = async (preserve = true) => {
 		if (!book || !panes.length || !alive()) return
@@ -295,17 +309,13 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 			? `repeat(2,${pageWidth}px)`
 			: 'minmax(0,1fr)'
 		surface.style.justifyContent = physicalDouble ? 'center' : ''
+		const fixed = book.rendition.layout === 'pre-paginated'
 		const cover =
-			settings.firstPageSingle && physicalDouble && isFirstPage(book!, panes[0])
+			settings.firstPageSingle && physicalDouble && isFirstPage(book, panes[0])
 		panes[0].wrapper.style.width = physicalDouble ? `${pageWidth}px` : '100%'
-		panes[0].wrapper.style.gridRow = '1'
-		panes[0].wrapper.style.gridColumn = cover ? '1 / -1' : '1'
-		panes[0].wrapper.style.justifySelf = cover ? 'center' : ''
-		if (panes.length > 1) {
-			panes[1].wrapper.style.gridRow = '1'
-			panes[1].wrapper.style.gridColumn = '2'
-			panes[1].wrapper.style.visibility = cover ? 'hidden' : ''
-		}
+		// Fixed spread slots are set by syncFixedPeer, not by the viewport.
+		if (!fixed || !physicalDouble)
+			placeFixedPane(panes[0], cover ? 'center' : 'leading')
 		surface.style.gap = `${settings.gutter}px`
 		surface.style.direction = book.dir === 'rtl' ? 'rtl' : 'ltr'
 		if (physicalDouble && panes.length === 1) {
@@ -360,10 +370,6 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 	}
 	const jump = async (pane: Pane, target: number) => {
 		const renderer = rendererOf(pane)
-		if (book?.rendition.layout === 'pre-paginated') {
-			await renderer.goTo?.({ index: target })
-			return
-		}
 		const count = Math.max(1, (renderer.pages ?? 2) - 2)
 		await renderer.scrollToAnchor?.(
 			Math.max(0, Math.min(1, (target - 1) / Math.max(1, count - 1))),
@@ -392,8 +398,52 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		cancelled(options, () => closed)
 		return true
 	}
+	const fixedGroups = () =>
+		fixedSpreadGroups(
+			book!.sections,
+			book!.dir === 'rtl',
+			settings.firstPageSingle,
+		)
+	const loadFixedPeer = async (peer: Pane, index: number) => {
+		if (sectionIndex(book!, peer) === index) return
+		// Hide only while the peer is being moved to its group partner.
+		peer.wrapper.style.visibility = 'hidden'
+		await rendererOf(peer).goTo?.({ index })
+		await awaitPaneLayout(peer, opening.signal)
+		cancelled(options, () => closed)
+	}
+	const syncFixedPeer = async () => {
+		const [primary, peer] = panes
+		const groups = fixedGroups()
+		const group = groups[fixedGroupIndex(groups, sectionIndex(book!, primary))]
+		if (!group || group.second === undefined) {
+			peer.wrapper.style.visibility = 'hidden'
+			placeFixedPane(primary, group?.slot ?? 'leading')
+			return
+		}
+		await loadFixedPeer(peer, group.second)
+		// Moving the primary to the lead leaves readingAnchor untouched.
+		if (sectionIndex(book!, primary) !== group.first)
+			await rendererOf(primary).goTo?.({ index: group.first })
+		placeFixedPane(primary, 'leading')
+		placeFixedPane(peer, 'trailing')
+		peer.wrapper.style.visibility = ''
+	}
+	const turnFixed = async (forward: boolean) => {
+		const groups = fixedGroups()
+		const target = adjacentFixedGroup(
+			groups,
+			sectionIndex(book!, panes[0]),
+			forward,
+		)
+		if (target === -1) return false
+		await rendererOf(panes[0]).goTo?.({ index: groups[target].first })
+		await syncPeer()
+		return true
+	}
 	const syncPeer = async () => {
 		if (panes.length < 2 || !book) return
+		if (book.rendition.layout === 'pre-paginated') return syncFixedPeer()
 		const cover =
 			settings.firstPageSingle && columns === 2 && isFirstPage(book!, panes[0])
 		panes[0].wrapper.style.gridRow = '1'
@@ -403,42 +453,32 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		panes[1].wrapper.style.gridColumn = '2'
 		panes[1].wrapper.style.visibility = cover ? 'hidden' : ''
 		if (cover) return
-		if (
-			rendererOf(panes[0]).atEnd ||
-			(book.rendition.layout === 'pre-paginated' &&
-				nextSection(book, sectionIndex(book, panes[0]), 1) === undefined)
-		) {
+		if (rendererOf(panes[0]).atEnd) {
 			panes[1].wrapper.style.visibility = 'hidden'
 			return
 		}
 		panes[1].wrapper.style.visibility = 'hidden'
-		if (book.rendition.layout === 'pre-paginated') {
-			const current = sectionIndex(book, panes[0])
-			const next = nextSection(book, current, 1)
-			if (next !== undefined) await rendererOf(panes[1]).goTo?.({ index: next })
+		const primaryIndex = sectionIndex(book!, panes[0])
+		if (primaryIndex !== sectionIndex(book!, panes[1])) {
+			await rendererOf(panes[1]).goTo?.({ index: primaryIndex, anchor: 0 })
+			await awaitPaneLayout(panes[1], opening.signal)
+			cancelled(options, () => closed)
+		}
+		if (primaryIndex !== sectionIndex(book!, panes[1])) {
+			panes[1].wrapper.style.visibility = ''
+			return
+		}
+		const peerRenderer = rendererOf(panes[1])
+		const target = (rendererOf(panes[0]).page ?? 1) + 1
+		const count = Math.max(1, (peerRenderer.pages ?? 2) - 2)
+		if (target <= count) {
+			await jump(panes[1], target)
 		} else {
-			const primaryIndex = sectionIndex(book, panes[0])
-			const peerIndex = sectionIndex(book, panes[1])
-			if (primaryIndex !== peerIndex) {
-				await rendererOf(panes[1]).goTo?.({ index: primaryIndex, anchor: 0 })
-				await awaitPaneLayout(panes[1], opening.signal)
-				cancelled(options, () => closed)
-			}
-			const primaryRenderer = rendererOf(panes[0])
-			const peerRenderer = rendererOf(panes[1])
-			if (primaryIndex === sectionIndex(book, panes[1])) {
-				const target = (primaryRenderer.page ?? 1) + 1
-				const count = Math.max(1, (peerRenderer.pages ?? 2) - 2)
-				if (target <= count) await jump(panes[1], target)
-				else {
-					const next = nextSection(book, primaryIndex, 1)
-					if (next !== undefined) {
-						await peerRenderer.goTo?.({ index: next, anchor: 0 })
-						await awaitPaneLayout(panes[1], opening.signal)
-						cancelled(options, () => closed)
-					} else return
-				}
-			}
+			const next = nextSection(book!, primaryIndex, 1)
+			if (next === undefined) return
+			await peerRenderer.goTo?.({ index: next, anchor: 0 })
+			await awaitPaneLayout(panes[1], opening.signal)
+			cancelled(options, () => closed)
 		}
 		panes[1].wrapper.style.visibility = ''
 	}
@@ -461,88 +501,74 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		const generation = activeGeneration
 		return enqueue(async () => {
 			if (!active || generation !== activeGeneration) return
-			const cover =
-				settings.firstPageSingle &&
+			if (
 				columns === 2 &&
-				isFirstPage(book!, panes[0])
-			if (columns === 2 && panes.length > 1) {
+				panes.length > 1 &&
+				book?.rendition.layout === 'pre-paginated'
+			) {
+				if (!(await turnFixed(forward))) return
+			} else if (columns === 2 && panes.length > 1) {
+				const cover = settings.firstPageSingle && isFirstPage(book!, panes[0])
 				if (cover) {
 					if (!forward || !(await stepOne(panes[0], true))) return
-					await syncPeer()
-					rememberAnchor()
-					confirmPosition()
-					return
-				}
-				const fixed = book?.rendition.layout === 'pre-paginated'
-				const peerAtEnd =
-					panes[1].wrapper.style.visibility !== 'hidden' &&
-					(fixed
-						? nextSection(book!, sectionIndex(book!, panes[1]), 1) === undefined
-						: rendererOf(panes[1]).atEnd)
-				if (forward && peerAtEnd) return
-				let moved = false
-				if (book?.rendition.layout === 'pre-paginated') {
-					const direction = forward ? 1 : -1
-					const current = sectionIndex(book, panes[0])
-					const first = nextSection(book, current, direction)
-					const second =
-						first === undefined
-							? undefined
-							: nextSection(book, first, direction)
-					const firstSection = nextSection(book, -1, 1)
-					const boundaryTarget =
-						!forward &&
-						settings.firstPageSingle &&
-						first !== undefined &&
-						second === firstSection
-							? first
-							: undefined
-					const target = boundaryTarget ?? second ?? first
-					if (target !== undefined) {
-						await rendererOf(panes[0]).goTo?.({ index: target })
-						moved = true
-					}
 				} else {
-					const primary = rendererOf(panes[0])
+					const peerAtEnd =
+						panes[1].wrapper.style.visibility !== 'hidden' &&
+						rendererOf(panes[1]).atEnd
+					if (forward && peerAtEnd) return
 					const steps =
 						!forward && settings.firstPageSingle
 							? await reflowBackwardSteps(
 									sectionIndex(book!, panes[0]),
-									primary.page ?? 1,
+									rendererOf(panes[0]).page ?? 1,
 								)
 							: 2
+					let moved = false
 					for (let i = 0; i < steps; i++) {
 						if (!(await stepOne(panes[0], forward))) break
 						moved = true
 					}
+					if (!moved) return
 				}
-				if (!moved) return
 				await syncPeer()
 			} else if (!(await stepOne(panes[0], forward))) return
 			rememberAnchor()
 			confirmPosition()
 		})
 	}
+	const loadLocation = async (href: string) => {
+		const primary = panes[0]
+		const previous = primary.view.lastLocation?.cfi
+		const target = await primary.view.goTo(href)
+		await awaitPaneLayout(primary, opening.signal)
+		cancelled(options, () => closed)
+		// A failed fixed jump can leave lastLocation pointing at the visual lead.
+		if (
+			book!.rendition.layout === 'pre-paginated' &&
+			target?.index !== sectionIndex(book!, primary)
+		)
+			return { previous }
+		return { previous, cfi: primary.view.lastLocation?.cfi }
+	}
+	const goToLocation = (href: string) =>
+		enqueue(async () => {
+			const { previous, cfi } = await loadLocation(href)
+			if (!cfi) return
+			const fixed = book!.rendition.layout === 'pre-paginated'
+			const changed = fixed ? collapse(cfi) !== readingAnchor : cfi !== previous
+			if (!fixed && !changed) return
+			if (changed) rememberAnchor(cfi)
+			// goTo can move the visual lead even when the fixed reading anchor matches.
+			if (columns === 2) await syncPeer()
+			confirmPosition(changed)
+		})
 	const bindLinks = (pane: Pane) => {
 		pane.view.addEventListener('link', (event) => {
 			const href = (event as CustomEvent<{ href?: string }>).detail?.href
 			if (!href) return
 			event.preventDefault()
 			navigationEpoch += 1
-			void enqueue(async () => {
-				const previous = panes[0].view.lastLocation?.cfi
-				await panes[0].view.goTo(href)
-				await awaitPaneLayout(panes[0], opening.signal)
-				cancelled(options, () => closed)
-				if (
-					!panes[0].view.lastLocation?.cfi ||
-					panes[0].view.lastLocation.cfi === previous
-				)
-					return
-				rememberAnchor()
-				if (columns === 2) await syncPeer()
-				confirmPosition()
-			})
+			void goToLocation(href)
 		})
 	}
 	const bindPane = (pane: Pane) => {
@@ -563,20 +589,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 		prev: () => turn(false),
 		goTo: (href) => {
 			navigationEpoch += 1
-			return enqueue(async () => {
-				const previous = panes[0].view.lastLocation?.cfi
-				await panes[0].view.goTo(href)
-				await awaitPaneLayout(panes[0], opening.signal)
-				cancelled(options, () => closed)
-				if (
-					!panes[0].view.lastLocation?.cfi ||
-					panes[0].view.lastLocation.cfi === previous
-				)
-					return
-				rememberAnchor()
-				if (columns === 2) await syncPeer()
-				confirmPosition()
-			})
+			return goToLocation(href)
 		},
 		untouched: () => navigationEpoch === 0,
 		checkpoint: () => ({
