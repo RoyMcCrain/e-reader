@@ -282,7 +282,21 @@ test('bookshelf filters, groups, orders and fits mobile width', async ({
 	await page.getByLabel('形式').selectOption('epub')
 	await page.getByLabel('表示順').selectOption('newest')
 	await page.setViewportSize({ width: 720, height: 748 })
-	await expect(recent.getByRole('button')).toHaveCount(2)
+	await expect(
+		recent.getByRole('button', { name: /、(EPUB|ZIP)$/ }),
+	).toHaveCount(2)
+	// 収まりきる場合も前へ／次へは常時表示され、無効状態になる。
+	for (const name of [
+		'最近アップロードされた本を前へ',
+		'最近アップロードされた本を次へ',
+	] as const) {
+		await expect(recent.getByRole('button', { name })).toBeVisible()
+		await expect(recent.getByRole('button', { name })).toBeDisabled()
+	}
+	for (const name of ['すべての本を前へ', 'すべての本を次へ'] as const) {
+		await expect(all.getByRole('button', { name })).toBeVisible()
+		await expect(all.getByRole('button', { name })).toBeDisabled()
+	}
 	await expect(coverLinks(all)).toHaveCount(2)
 	const firstResult = await ordered.nth(0).boundingBox()
 	const secondResult = await ordered.nth(1).boundingBox()
