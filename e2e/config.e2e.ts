@@ -51,7 +51,9 @@ test('config overlays a live book and disables its keyboard input', async ({
 	await expect(page.getByRole('img', { name: '画像 2 / 3' })).toBeVisible()
 	await revealReader(page)
 	await page.getByRole('button', { name: '設定' }).click()
-	await expect(page.getByRole('heading', { name: '設定' })).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: '表示', exact: true }),
+	).toBeVisible()
 	const readerShell = page.locator('[aria-hidden="true"]').filter({
 		has: page.locator('img[alt="画像 2 / 3"]'),
 	})

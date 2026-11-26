@@ -286,7 +286,9 @@ test('TOC focus pins chrome; settings return clears the pin and idle hiding resu
 	await expect(dialog).not.toBeVisible()
 
 	await page.getByRole('button', { name: '設定' }).click()
-	await expect(page.getByRole('heading', { name: '設定' })).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: '表示', exact: true }),
+	).toBeVisible()
 	await page.getByRole('button', { name: '読書に戻る' }).click()
 	await expect(header).toHaveCSS('opacity', '1')
 	await revealReader(page)

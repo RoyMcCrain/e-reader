@@ -128,9 +128,7 @@ function Config() {
 					<svg viewBox="0 0 24 24" aria-hidden="true">
 						<path d="m15 18-6-6 6-6M9 12h11" />
 					</svg>
-					<span>{file ? '読書に戻る' : '戻る'}</span>
 				</button>
-				<h1>設定</h1>
 			</header>
 			<section className={styles.group} aria-labelledby="display-heading">
 				<h2 id="display-heading">表示</h2>
