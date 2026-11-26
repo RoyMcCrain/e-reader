@@ -280,27 +280,23 @@ const Carousel = ({
 		})
 	return (
 		<div className={styles.carousel}>
-			{scrollState !== 'none' && (
-				<button
-					aria-label={prevLabel}
-					disabled={scrollState === 'start'}
-					onClick={() => scroll(-1)}
-				>
-					‹
-				</button>
-			)}
+			<button
+				aria-label={prevLabel}
+				disabled={scrollState === 'start' || scrollState === 'none'}
+				onClick={() => scroll(-1)}
+			>
+				‹
+			</button>
 			<ul ref={track} aria-label={listLabel}>
 				{children}
 			</ul>
-			{scrollState !== 'none' && (
-				<button
-					aria-label={nextLabel}
-					disabled={scrollState === 'end'}
-					onClick={() => scroll(1)}
-				>
-					›
-				</button>
-			)}
+			<button
+				aria-label={nextLabel}
+				disabled={scrollState === 'end' || scrollState === 'none'}
+				onClick={() => scroll(1)}
+			>
+				›
+			</button>
 		</div>
 	)
 }
