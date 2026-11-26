@@ -47,13 +47,23 @@ export const writeLastSession = (value: {
 	bookId: string
 	name: string
 	format: LastSession['format']
+	atEnd?: boolean
 }): void => {
 	if (!validBookId(value.bookId) || !validName(value.name)) return
 	if (!validFormat(value.format)) return
+	if (value.atEnd) {
+		clearLastSession()
+		return
+	}
 	try {
 		globalThis.localStorage?.setItem(
 			LAST_SESSION_KEY,
-			JSON.stringify({ ...value, updatedAt: Date.now() }),
+			JSON.stringify({
+				bookId: value.bookId,
+				name: value.name,
+				format: value.format,
+				updatedAt: Date.now(),
+			}),
 		)
 	} catch {
 		// Storage can be disabled or full; resume is best-effort.

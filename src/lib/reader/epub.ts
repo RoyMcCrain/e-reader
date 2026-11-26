@@ -211,7 +211,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 	let surface: HTMLElement | undefined
 	let removeHostInput = () => {}
 	const alive = () => !closed && !options.signal.aborted
-	const notify = () => {
+	const notify = (): ReaderLocation | undefined => {
 		if (!alive() || !panes[0]?.view.lastLocation) return
 		const primary = panes[0].view.lastLocation
 		const renderer = rendererOf(panes[0])
@@ -251,6 +251,11 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 			spreadSurface.dataset.atEnd = String(loc.atEnd)
 		}
 		options.onLocation(loc)
+		return loc
+	}
+	const confirmPosition = () => {
+		const atEnd = notify()?.atEnd ?? false
+		if (readingAnchor) options.onConfirmedPosition?.(readingAnchor, atEnd)
 	}
 	const enqueue = (operation: () => Promise<void>, propagate = false) => {
 		const task = queued.then(async () => {
@@ -465,8 +470,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 					if (!forward || !(await stepOne(panes[0], true))) return
 					await syncPeer()
 					rememberAnchor()
-					if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
-					notify()
+					confirmPosition()
 					return
 				}
 				const fixed = book?.rendition.layout === 'pre-paginated'
@@ -516,8 +520,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 				await syncPeer()
 			} else if (!(await stepOne(panes[0], forward))) return
 			rememberAnchor()
-			if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
-			notify()
+			confirmPosition()
 		})
 	}
 	const bindLinks = (pane: Pane) => {
@@ -538,8 +541,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 					return
 				rememberAnchor()
 				if (columns === 2) await syncPeer()
-				if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
-				notify()
+				confirmPosition()
 			})
 		})
 	}
@@ -573,8 +575,7 @@ export const openEpub = async (options: EpubOptions): Promise<EpubSession> => {
 					return
 				rememberAnchor()
 				if (columns === 2) await syncPeer()
-				if (readingAnchor) options.onConfirmedPosition?.(readingAnchor)
-				notify()
+				confirmPosition()
 			})
 		},
 		untouched: () => navigationEpoch === 0,

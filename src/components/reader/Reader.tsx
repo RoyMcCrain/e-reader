@@ -51,7 +51,12 @@ import styles from '#components/reader/Reader.module.css'
 type Archive = Awaited<ReturnType<typeof openImageArchive>>
 type Session =
 	| { kind: 'zip'; archive: Archive }
-	| { kind: 'epub'; epub: EpubSession; bookId?: string }
+	| {
+			kind: 'epub'
+			epub: EpubSession
+			bookId?: string
+			rememberResume: () => void
+	  }
 interface ReaderProps {
 	file: File
 	settings: ReaderSettings
@@ -111,11 +116,31 @@ interface ZipSetters {
 	setAtEnd: Dispatch<SetStateAction<boolean>>
 	setError: Dispatch<SetStateAction<string>>
 }
-const rememberZip = (refs: ZipRefs, lead: number) => {
+const isFinishedSpread = async (urls: string[], atEnd: boolean) => {
+	if (!atEnd) return false
+	try {
+		await Promise.all(
+			urls.map((url) => {
+				const image = new Image()
+				image.src = url
+				return image.decode()
+			}),
+		)
+		return true
+	} catch {
+		return false
+	}
+}
+const rememberZip = (refs: ZipRefs, lead: number, atEnd: boolean) => {
 	const bookId = refs.bookId.current
 	if (!bookId) return
 	saveZipLead(bookId, lead)
-	writeLastSession({ bookId, name: refs.fileName.current, format: 'zip' })
+	writeLastSession({
+		bookId,
+		name: refs.fileName.current,
+		format: 'zip',
+		atEnd,
+	})
 }
 const updateZip = async (
 	archive: Archive,
@@ -130,6 +155,8 @@ const updateZip = async (
 	const count = refs.firstPageSingle.current && lead === 0 ? 1 : columns
 	const indices = visibleIndices(lead, archive.names.length, count)
 	const urls = await Promise.all(indices.map((index) => archive.getUrl(index)))
+	const atEnd = lead + indices.length >= archive.names.length
+	const finished = await isFinishedSpread(urls, atEnd)
 	if (
 		refs.generation.current !== id ||
 		refs.imageRequest.current !== request ||
@@ -137,7 +164,7 @@ const updateZip = async (
 	)
 		return
 	refs.lead.current = lead
-	rememberZip(refs, lead)
+	rememberZip(refs, lead, finished)
 	refs.swipe.current = swipeDirection ?? null
 	setters.setError('')
 	setters.setIndices(indices)
@@ -145,7 +172,7 @@ const updateZip = async (
 	setters.setProgress(
 		Math.round(((lead + indices.length) / archive.names.length) * 100),
 	)
-	setters.setAtEnd(lead + indices.length >= archive.names.length)
+	setters.setAtEnd(atEnd)
 }
 const scheduleZipUpdate = (refs: ZipRefs, setters: ZipSetters) => {
 	const id = refs.generation.current
@@ -285,6 +312,7 @@ interface OpenReaderFileOptions {
 		bookId: string
 		id: number
 		signal: AbortSignal
+		rememberResume: () => void
 	}) => Promise<void>
 }
 
@@ -344,14 +372,24 @@ const openEpubFile = async ({
 		setPositionStatus,
 	})
 	if (signal.aborted) return
+	let latestAtEnd = false
+	const rememberResume = () => {
+		if (!bookId || signal.aborted || refs.generation.current !== id) return
+		writeLastSession({
+			bookId,
+			name: file.name,
+			format: 'epub',
+			atEnd: latestAtEnd,
+		})
+	}
 	const epub = await openEpub({
 		initialCFI,
-		onConfirmedPosition: (cfi) => {
+		onConfirmedPosition: (cfi, atEnd) => {
 			if (!bookId || signal.aborted || refs.generation.current !== id) return
 			setPositionStatus(syncStatusText.saving)
 			// Synchronous writes go first so a tab kill during IndexedDB still keeps the CFI.
 			saveEpubCfiBackup(bookId, cfi)
-			writeLastSession({ bookId, name: file.name, format: 'epub' })
+			writeLastSession({ bookId, name: file.name, format: 'epub', atEnd })
 			void savePosition(bookId, cfi)
 				.then(async () => {
 					if (signal.aborted || refs.generation.current !== id) return
@@ -388,6 +426,7 @@ const openEpubFile = async ({
 		signal,
 		onLocation: (location) => {
 			if (signal.aborted || refs.generation.current !== id) return
+			latestAtEnd = location.atEnd
 			setters.setProgress(Math.round(location.progress))
 			setters.setAtEnd(location.atEnd)
 		},
@@ -400,14 +439,14 @@ const openEpubFile = async ({
 		await epub.close()
 		return
 	}
-	if (bookId) writeLastSession({ bookId, name: file.name, format: 'epub' })
-	refs.session.current = { kind: 'epub', epub, bookId }
+	rememberResume()
+	refs.session.current = { kind: 'epub', epub, bookId, rememberResume }
 	setHasSession(true)
 	setDirection(epub.dir)
 	setToc(epub.toc)
 	if (epub.initialRestoreFailed)
 		setPositionStatus('保存した位置を開けず、先頭から表示しています。')
-	if (bookId) void refreshPosition({ epub, bookId, id, signal })
+	if (bookId) void refreshPosition({ epub, bookId, id, signal, rememberResume })
 }
 
 const openReaderFile = async (options: OpenReaderFileOptions) => {
@@ -915,7 +954,7 @@ export const Reader = ({
 		(options) => {
 			const run = async () => {
 				if (choiceInFlight.current) return
-				const { epub, bookId, id, signal } = options
+				const { epub, bookId, id, signal, rememberResume } = options
 				const result = await refreshPositionSession({
 					bookId,
 					epub,
@@ -934,6 +973,7 @@ export const Reader = ({
 					return
 				handleConflictPosition(result.conflict)
 				if (result.remote) setRemoteCFI(result.remote)
+				if (result.moved) rememberResume()
 				if (!result.status) return
 				setPositionStatus((previous) => {
 					const restored = (
@@ -969,6 +1009,7 @@ export const Reader = ({
 				bookId: current.bookId,
 				id,
 				signal: new AbortController().signal,
+				rememberResume: current.rememberResume,
 			})
 		}
 		window.addEventListener('online', retry)
@@ -1082,6 +1123,7 @@ export const Reader = ({
 				}
 				setRemoteCFI(undefined)
 				setHasConflict(false)
+				current.rememberResume()
 				setPositionStatus(syncStatusText.moved)
 			} catch {
 				if (generation.current === id && session.current === current) {

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { BlobWriter, TextReader, ZipWriter } from '@zip.js/zip.js'
 
-import { turnPage } from './reader-actions'
+import { revealReader, turnPage } from './reader-actions'
 
 const makeFixedEpub = async (
 	imageStyle = 'width:100%;height:100%;object-fit:contain',
@@ -570,4 +570,18 @@ test('fixed-layout EPUB navigates real pages and clamps the final spread', async
 	await expect
 		.poll(async () => `${await text('primary')}|${await text('secondary')}`)
 		.toContain('P1|P2')
+
+	await turnPage(page, true)
+	await expect.poll(() => text('primary')).toContain('P3')
+	await revealReader(page)
+	await page.getByRole('button', { name: '本を閉じる' }).click()
+	await expect
+		.poll(() =>
+			page.evaluate(
+				(key) => localStorage.getItem(key),
+				'shiori.reader.last-session.v1',
+			),
+		)
+		.toBeNull()
+	await expect(page.getByRole('region', { name: '前回の続き' })).toHaveCount(0)
 })
