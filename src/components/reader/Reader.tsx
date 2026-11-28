@@ -673,6 +673,7 @@ const PositionStatus = ({
 			<PositionStatusVisual status={positionStatus} />
 			{conflict ? (
 				<>
+					<span aria-hidden="true">{syncMessages.conflict}</span>
 					<button disabled={busy} onClick={useLocal}>
 						この端末の位置を使う
 					</button>
