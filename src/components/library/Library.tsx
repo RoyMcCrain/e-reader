@@ -23,7 +23,7 @@ interface LibraryProps {
 	cancelPending: RefObject<(() => void) | null>
 	presentation?: 'list' | 'bookshelf' | 'series' | 'history'
 	seriesName?: string
-	returnFromSeries?: boolean
+	seriesTarget?: string
 	seriesFrom?: SeriesFrom
 }
 
@@ -341,11 +341,11 @@ const authorLabel = (books: CloudBook[]) =>
 
 type SeriesFrom = '/' | '/bookshelf' | '/history'
 
-const SeriesBackLink = ({ from }: { from?: SeriesFrom }) =>
+const SeriesBackLink = ({ from, name }: { from?: SeriesFrom; name?: string }) =>
 	from === '/' || from === '/history' ? (
 		<Link to={from}>← 戻る</Link>
 	) : (
-		<Link to="/bookshelf" search={{ from: 'series' }}>
+		<Link to="/bookshelf" search={{ from: 'series', name }}>
 			← 戻る
 		</Link>
 	)
@@ -428,7 +428,7 @@ const SeriesDetails = (props: SeriesDetailsProps) => {
 	const latest = useLatestRead(selected, ready)
 	return (
 		<main className={`${styles.library} ${styles.series}`}>
-			<SeriesBackLink from={seriesFrom} />
+			<SeriesBackLink from={seriesFrom} name={seriesName} />
 			<h1>{title}</h1>
 			{authors && <p>著者: {authors}</p>}
 			{ready && <p>{selected.length} 冊</p>}
@@ -458,7 +458,7 @@ export const Library = ({
 	cancelPending,
 	presentation = 'list',
 	seriesName,
-	returnFromSeries,
+	seriesTarget,
 	seriesFrom,
 }: LibraryProps) => {
 	const { setFile } = useReaderApp()
@@ -507,7 +507,7 @@ export const Library = ({
 				busyId={busyId}
 				openBook={openBook}
 				downloadError={downloadError}
-				returnFromSeries={returnFromSeries}
+				seriesTarget={seriesTarget}
 				savedIds={savedIds}
 				saveBusyId={saveBusyId}
 				onToggleSave={toggleSave}
