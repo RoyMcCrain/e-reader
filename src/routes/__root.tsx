@@ -31,7 +31,7 @@ const AppShell = () => {
 			? pathname
 			: undefined
 	return (
-		<>
+		<div className={shellStyles.shell}>
 			{file && (
 				<div
 					className={shellStyles.readerShell}
@@ -69,10 +69,10 @@ const AppShell = () => {
 				</div>
 			)}
 			{!file && active && <LastSessionResume onOpen={setFile} />}
-			<div hidden={Boolean(file && from)}>
+			<div hidden={Boolean(file && from)} className={shellStyles.shellBody}>
 				<Outlet />
 			</div>
-		</>
+		</div>
 	)
 }
 
