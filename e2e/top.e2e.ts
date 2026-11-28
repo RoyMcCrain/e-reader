@@ -90,10 +90,11 @@ test('top shows recently read books in recency order capped at ten', async ({
 })
 
 test('top recovers from a failed book fetch after retry', async ({ page }) => {
-	let calls = 0
+	// 初回取得は必ず失敗させ、再試行の直前で成功に切り替える。
+	// fetch の到達回数に依存させると、リトライ前の再取得タイミングで結果が変わる。
+	let failBooks = true
 	await page.route('**/api/books', (route) => {
-		calls += 1
-		if (calls <= 2) return route.fulfill({ status: 503, body: 'unavailable' })
+		if (failBooks) return route.fulfill({ status: 503, body: 'unavailable' })
 		return route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -105,6 +106,7 @@ test('top recovers from a failed book fetch after retry', async ({ page }) => {
 	)
 	await page.goto('/')
 	await expect(page.getByText('本は現在利用できません。')).toBeVisible()
+	failBooks = false
 	await page.getByRole('button', { name: '再試行' }).click()
 	await expect(page.getByRole('region', { name: '新しい本' })).toBeVisible()
 	await expect(page.getByText('本は現在利用できません。')).toHaveCount(0)
