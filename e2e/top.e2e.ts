@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js'
 
 const books = Array.from({ length: 12 }, (_, index) => ({
 	id: index.toString(16).padStart(64, '0'),
@@ -124,4 +125,67 @@ test('top renders when reading the mock flag throws a SecurityError', async ({
 	await page.goto('/')
 	await expect(page.getByRole('heading', { name: /物語の中へ/ })).toBeVisible()
 	await expect(page.getByText('モックを準備しています…')).toHaveCount(0)
+})
+
+test('top opens a saved book offline from the later-read section', async ({
+	page,
+}) => {
+	const pixel = Buffer.from(
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZt8AAAAASUVORK5CYII=',
+		'base64',
+	)
+	const writer = new ZipWriter(new BlobWriter())
+	await writer.add('page.png', new Uint8ArrayReader(pixel))
+	const archive = Buffer.from(await (await writer.close()).arrayBuffer())
+	const saved = {
+		id: 'e'.repeat(64),
+		name: 'オフライン.zip',
+		format: 'zip',
+		size: archive.length,
+		uploadedAt: '2024-01-01T00:00:00Z',
+	}
+	await page.route('**/api/books', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ books: [saved] }),
+		}),
+	)
+	await page.route('**/api/books/*', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/zip',
+			body: archive,
+		}),
+	)
+	await page.route('**/api/books/*/cover', (route) =>
+		route.fulfill({ status: 404, body: 'Not found' }),
+	)
+	await page.goto('/bookshelf')
+	await page
+		.getByRole('button', { name: `${saved.name}を後で読むために保存` })
+		.first()
+		.click()
+	await expect(
+		page
+			.getByRole('button', { name: `${saved.name}の保存済みを取り消す` })
+			.first(),
+	).toBeVisible()
+
+	await page.goto('/')
+	const offline = page.getByRole('region', { name: '後で読む' })
+	const openSaved = offline.getByRole('button', { name: `${saved.name}、ZIP` })
+	await openSaved.click()
+	await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
+	await page.getByRole('button', { name: '本を閉じる' }).click()
+	await expect(offline).toBeVisible()
+
+	try {
+		await page.context().setOffline(true)
+		await page.route('**/api/books/**', (route) => route.abort())
+		await openSaved.click()
+		await expect(page.getByRole('img', { name: '画像 1 / 1' })).toBeVisible()
+	} finally {
+		await page.context().setOffline(false)
+	}
 })
