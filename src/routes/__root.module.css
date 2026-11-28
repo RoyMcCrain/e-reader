@@ -1,6 +1,16 @@
 .readerShell[aria-hidden='true'] {
 	visibility: hidden;
 }
+.shell {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	height: 100dvh;
+}
+.shellBody {
+	flex: 1 1 auto;
+	min-height: 0;
+}
 .readerShell {
 	position: fixed;
 	inset: 0;

@@ -772,6 +772,53 @@ test('recently uploaded covers open the reader directly and close back to the sh
 	await expect(footer).toBeVisible()
 })
 
+test('resume banner keeps the shelf footer pinned to the viewport', async ({
+	page,
+}) => {
+	const shelf = Array.from({ length: 48 }, (_, index) => ({
+		id: (index + 1).toString(16).padStart(64, '0'),
+		name: `第${(index % 3) + 1}巻.epub`,
+		format: 'epub',
+		size: 10,
+		series: `長いシリーズ${Math.floor(index / 3) + 1}`,
+		uploadedAt: '2024-01-01T00:00:00Z',
+	}))
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'shiori.reader.last-session.v1',
+			JSON.stringify({
+				bookId: 'f'.repeat(64),
+				name: '読みかけ.epub',
+				format: 'epub',
+				updatedAt: 1,
+			}),
+		),
+	)
+	await mockLibrary(page, shelf)
+	for (const [width, height] of [
+		[1280, 800],
+		[390, 700],
+	] as const) {
+		await page.setViewportSize({ width, height })
+		await page.goto('/bookshelf')
+		await expect(page.getByRole('region', { name: '前回の続き' })).toBeVisible()
+		const footer = page.getByRole('contentinfo', {
+			name: '本棚の絞り込みと表示設定',
+		})
+		// バナーがあっても文書全体はスクロールせず、フッターは画面内に収まる。
+		await expect(footer).toBeInViewport()
+		expect(await page.evaluate(() => window.scrollY)).toBe(0)
+		const scroller = page.getByRole('main')
+		await scroller.evaluate((element) => {
+			element.scrollTop = element.scrollHeight
+		})
+		const backToTop = page.getByRole('button', { name: '先頭へ戻る' })
+		await expect(backToTop).toBeVisible()
+		await expect(backToTop).toBeInViewport()
+		await expect(footer).toBeInViewport()
+	}
+})
+
 test('long shelf returns to the top with a back-to-top button at phone width', async ({
 	page,
 }) => {
