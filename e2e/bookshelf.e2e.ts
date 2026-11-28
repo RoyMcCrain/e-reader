@@ -47,6 +47,42 @@ const makeZip = async () => {
 	return Buffer.from(await (await writer.close()).arrayBuffer())
 }
 
+// Distance from the scroller's top edge to the element, in CSS pixels.
+const topInMain = (locator: Locator) =>
+	locator.evaluate((element) => {
+		const main = element.closest('main')!
+		return Math.round(
+			element.getBoundingClientRect().top - main.getBoundingClientRect().top,
+		)
+	})
+
+const isSeriesReturn = (url: URL, name: string) =>
+	url.pathname === '/bookshelf' &&
+	url.searchParams.get('from') === 'series' &&
+	url.searchParams.get('name') === name
+
+const shelfLink = (page: Page, name: string) =>
+	page
+		.getByRole('region', { name: 'すべての本' })
+		.getByRole('link', { name, exact: true })
+const openSeries = async (page: Page, name: string) => {
+	await shelfLink(page, name).click()
+	await expect(
+		page.getByRole('heading', { level: 1, name, exact: true }),
+	).toBeVisible()
+}
+
+// Synthetic shelf with one single-volume series per group, named by number.
+const numberedSeries = (length: number) =>
+	Array.from({ length }, (_, index) => ({
+		id: (index + 1).toString(16).padStart(64, '0'),
+		name: '第1巻.epub',
+		format: 'epub',
+		size: 10,
+		series: `シリーズ${String(index + 1).padStart(2, '0')}`,
+		uploadedAt: '2024-01-01T00:00:00Z',
+	}))
+
 // Shelf covers in every sort mode are links to the series detail.
 const coverLinks = (region: Locator) =>
 	region.getByRole('link', { name: /、(EPUB|ZIP)$/ })
@@ -452,12 +488,28 @@ test('series detail keeps exact names, volumes and reader return through direct 
 			.getByRole('button'),
 	).toHaveCount(2)
 	await page.getByRole('link', { name: '戻る' }).click()
-	await expect(page).toHaveURL('/bookshelf?from=series')
+	await expect(page).toHaveURL((url) => isSeriesReturn(url, seriesName))
 	await expect(page.getByRole('heading', { name: '本棚' })).toBeVisible()
 
 	await page.goto('/bookshelf/series?name=' + encodeURIComponent('存在しない'))
 	await expect(
 		page.getByText('このシリーズの本は見つかりません。'),
+	).toBeVisible()
+	const missingHref = await page
+		.getByRole('link', { name: '戻る' })
+		.getAttribute('href')
+	const missingBack = new URL(missingHref!, page.url())
+	expect(missingBack.pathname).toBe('/bookshelf')
+	expect(missingBack.searchParams.get('from')).toBe('series')
+	expect(missingBack.searchParams.get('name')).toBe('存在しない')
+
+	await page.goto('/bookshelf/series')
+	await expect(
+		page.getByRole('heading', {
+			level: 1,
+			name: 'シリーズ未設定',
+			exact: true,
+		}),
 	).toBeVisible()
 	await expect(page.getByRole('link', { name: '戻る' })).toHaveAttribute(
 		'href',
@@ -571,48 +623,98 @@ test('series detail shows the last read volume and resumes it in the reader', as
 	await expect(current).toContainText('巻2')
 })
 
-test('returns to the shelf scroll position after a series detail round trip', async ({
+test('series return scrolls the shelf group to the top after groups shift above it', async ({
 	page,
 }) => {
-	const shelf = Array.from({ length: 16 }, (_, index) => ({
-		id: (index + 1).toString(16).padStart(64, '0'),
-		name: `第${(index % 2) + 1}巻.epub`,
-		format: 'epub',
-		size: 10,
-		series: `シリーズ${Math.floor(index / 2) + 1}`,
-		uploadedAt: '2024-01-01T00:00:00Z',
-	}))
+	await page.setViewportSize({ width: 390, height: 640 })
+	const shelf = numberedSeries(8)
 	await mockLibrary(page, shelf)
 	await page.goto('/bookshelf')
-	const all = page.getByRole('region', { name: 'すべての本' })
 	const scroller = page.getByRole('main')
-	const seriesLink = all.getByRole('link', { name: 'シリーズ8', exact: true })
-	await expect(seriesLink).toBeVisible()
-	await scroller.evaluate((element) => {
-		element.scrollTop = element.scrollHeight
-	})
-	await seriesLink.scrollIntoViewIfNeeded()
-	const before = await scroller.evaluate((element) => element.scrollTop)
-	expect(before).toBeGreaterThan(0)
+	const target = shelfLink(page, 'シリーズ04')
+	await expect(target).toBeVisible()
+	// Move the target heading down to roughly 240px below the scroller top.
+	const offset = await topInMain(target)
+	await scroller.evaluate((main, shift) => {
+		main.scrollTop += shift
+	}, offset - 240)
+	await expect.poll(() => topInMain(target)).toBeGreaterThan(120)
 
-	await seriesLink.click()
-	await expect(page).toHaveURL(/\/bookshelf\/series\?name=/)
+	await target.click()
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'シリーズ04', exact: true }),
+	).toBeVisible()
+	// Two volumes sorting before the target push its group down while away.
+	shelf.push(
+		...['00 追加1', '00 追加2'].map((series, index) => ({
+			id: (index + 100).toString(16).padStart(64, '0'),
+			name: '追加.epub',
+			format: 'epub',
+			size: 10,
+			series,
+			uploadedAt: '2024-01-01T00:00:00Z',
+		})),
+	)
+
 	await page.getByRole('link', { name: '戻る' }).click()
-	await expect(page).toHaveURL('/bookshelf?from=series')
-	await expect(seriesLink).toBeVisible()
-	await expect
-		.poll(async () =>
-			Math.abs(
-				(await scroller.evaluate((element) => element.scrollTop)) - before,
-			),
-		)
-		.toBeLessThanOrEqual(2)
+	await expect(target).toBeInViewport()
+	await expect.poll(() => topInMain(target)).toBeLessThanOrEqual(24)
+	await expect(page).toHaveURL((url) => isSeriesReturn(url, 'シリーズ04'))
 
 	await page.goto('/bookshelf')
-	await expect(seriesLink).toBeVisible()
+	await expect(target).toBeVisible()
 	await expect
 		.poll(() => scroller.evaluate((element) => element.scrollTop))
 		.toBe(0)
+})
+
+test('explicit series return scrolls only the shelf and keeps the resume card in the outer page', async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 640 })
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'shiori.reader.last-session.v1',
+			JSON.stringify({
+				bookId: 'f'.repeat(64),
+				name: '読みかけ.epub',
+				format: 'epub',
+				updatedAt: 1,
+			}),
+		),
+	)
+	await mockLibrary(page, numberedSeries(9))
+	await page.goto('/bookshelf/series?name=' + encodeURIComponent('シリーズ05'))
+	const resume = page.getByRole('region', { name: '前回の続き' })
+	await expect(resume).toBeInViewport()
+	await page.getByRole('link', { name: '戻る' }).click()
+	await expect(shelfLink(page, 'シリーズ05')).toBeInViewport()
+	await expect(resume).toBeInViewport()
+	expect(await page.evaluate(() => window.scrollY)).toBe(0)
+	await expect
+		.poll(() => page.getByRole('main').evaluate((main) => main.scrollTop))
+		.toBeGreaterThan(0)
+})
+
+test('native back scrolls to the series last opened from that shelf entry', async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 640 })
+	await mockLibrary(page, numberedSeries(9))
+	await page.goto('/bookshelf')
+	await openSeries(page, 'シリーズ02')
+	await page.getByRole('link', { name: '戻る' }).click()
+	await expect(shelfLink(page, 'シリーズ02')).toBeInViewport()
+	await openSeries(page, 'シリーズ07')
+	await page.goBack()
+	await expect(shelfLink(page, 'シリーズ07')).toBeInViewport()
+	await expect(shelfLink(page, 'シリーズ02')).not.toBeInViewport()
+
+	// A normal shelf entry (no return URL) scrolls on its first native back.
+	await page.goto('/bookshelf')
+	await openSeries(page, 'シリーズ09')
+	await page.goBack()
+	await expect(shelfLink(page, 'シリーズ09')).toBeInViewport()
 })
 
 test('bookshelf renders when the position lookup fails', async ({ page }) => {

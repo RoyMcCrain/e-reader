@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { useReaderApp } from '#components/providers/ReaderProvider'
 import { Icon } from '#components/reader/Icon'
@@ -19,7 +19,7 @@ export interface BookshelfProps {
 	busyId: string
 	openBook: (book: CloudBook) => void
 	downloadError: string
-	returnFromSeries?: boolean
+	seriesTarget?: string
 }
 
 export interface BookshelfSaveProps {
@@ -31,8 +31,6 @@ export interface BookshelfSaveProps {
 	onOpenSave: (save: OfflineSave) => void
 }
 
-// In-memory only: lost on reload, never written to storage or the URL.
-let savedShelfScroll: number | undefined
 const coverPalette = [
 	'linear-gradient(145deg,#576f58,#385441)',
 	'linear-gradient(145deg,#866448,#6d5038)',
@@ -418,6 +416,7 @@ const AllBooksContent = ({ books, filtered, sort, ...save }: AllBooksProps) => {
 	return groupBooks(filtered).map((group) => (
 		<section
 			className={styles.group}
+			data-series-shelf={group.series ?? ''}
 			key={group.series === undefined ? 'unassigned' : `series:${group.series}`}
 		>
 			<h3>
@@ -678,8 +677,19 @@ const BookshelfHeader = ({ ready, query, setQuery }: BookshelfHeaderProps) => {
 	)
 }
 
+// Exact match on the group key; the name is never interpolated into a selector.
+// Moves only the shelf's own overflow container, so the page above it stays put.
+const scrollToSeriesShelf = (container: HTMLElement, seriesTarget: string) => {
+	const section = Array.from(
+		container.querySelectorAll<HTMLElement>('[data-series-shelf]'),
+	).find((element) => element.dataset.seriesShelf === seriesTarget)
+	if (!section) return
+	container.scrollTop +=
+		section.getBoundingClientRect().top - container.getBoundingClientRect().top
+}
+
 const BookshelfContent = (props: BookshelfContentProps) => {
-	const { books, filtered, query, setQuery, returnFromSeries } = props
+	const { books, filtered, query, setQuery, seriesTarget } = props
 	const ready = !props.loading && !props.listError
 	const scroller = useRef<HTMLElement>(null)
 	const [showBackToTop, setShowBackToTop] = useState(false)
@@ -694,38 +704,15 @@ const BookshelfContent = (props: BookshelfContentProps) => {
 		element.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' })
 	}
 	useLayoutEffect(() => {
-		// Any other entry to the shelf drops a stale offset.
-		if (!returnFromSeries) {
-			savedShelfScroll = undefined
-			return
-		}
-		if (!ready || savedShelfScroll === undefined || !scroller.current) return
-		scroller.current.scrollTop = savedShelfScroll
-		savedShelfScroll = undefined
-	}, [returnFromSeries, ready])
-	// Captures the position before the series link's navigation starts.
-	// Plain left clicks only: modified clicks and new tabs stay on the shelf.
-	const rememberSeriesOpen = (event: MouseEvent<HTMLElement>) => {
-		if (
-			event.button !== 0 ||
-			event.metaKey ||
-			event.ctrlKey ||
-			event.shiftKey ||
-			event.altKey
-		)
-			return
-		const target = event.target
-		const anchor = target instanceof Element ? target.closest('a') : null
-		if (anchor?.pathname === '/bookshelf/series' && !anchor.target)
-			savedShelfScroll = event.currentTarget.scrollTop
-	}
+		if (!ready || seriesTarget === undefined || !scroller.current) return
+		scrollToSeriesShelf(scroller.current, seriesTarget)
+	}, [seriesTarget, ready])
 	return (
 		<div className={styles.layout}>
 			<main
 				ref={scroller}
 				className={styles.page}
 				tabIndex={-1}
-				onClickCapture={rememberSeriesOpen}
 				onScroll={(event) =>
 					setShowBackToTop(event.currentTarget.scrollTop > 320)
 				}
@@ -775,29 +762,16 @@ export const Bookshelf = (props: BookshelfProps & BookshelfSaveProps) => {
 		() => filterBooks(books, { query, format }),
 		[books, query, format],
 	)
-	// A new filter, sort or search means the saved position no longer applies.
-	const changeQuery = (value: string) => {
-		savedShelfScroll = undefined
-		setQuery(value)
-	}
-	const changeFormat = (value: 'all' | 'epub' | 'zip') => {
-		savedShelfScroll = undefined
-		setFormat(value)
-	}
-	const changeSort = (value: BookSort) => {
-		savedShelfScroll = undefined
-		setSort(value)
-	}
 	return (
 		<BookshelfContent
 			{...props}
 			filtered={filtered}
 			query={query}
-			setQuery={changeQuery}
+			setQuery={setQuery}
 			format={format}
-			setFormat={changeFormat}
+			setFormat={setFormat}
 			sort={sort}
-			setSort={changeSort}
+			setSort={setSort}
 		/>
 	)
 }
