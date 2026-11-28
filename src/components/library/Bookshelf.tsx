@@ -95,10 +95,6 @@ interface SaveProps {
 	onToggleSave?: (book: CloudBook) => void
 }
 
-const saveLabel = (saved: boolean, busy: boolean) => {
-	if (busy) return '保存中…'
-	return saved ? '保存済み' : '後で読む'
-}
 const saveName = (book: CloudBook, saved: boolean) =>
 	saved
 		? `${book.name}の保存済みを取り消す`
@@ -117,12 +113,16 @@ const SaveButton = ({
 }) => (
 	<button
 		type="button"
-		className={styles.saveButton}
+		className={
+			saved
+				? `${styles.saveButton} ${styles.saveButtonSaved}`
+				: styles.saveButton
+		}
 		aria-label={saveName(book, saved)}
 		disabled={busy}
 		onClick={() => onToggle(book)}
 	>
-		{saveLabel(saved, busy)}
+		<Icon name="bookmark" />
 	</button>
 )
 

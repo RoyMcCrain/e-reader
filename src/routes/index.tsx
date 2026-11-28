@@ -1,14 +1,22 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 
-import { BookCover, SeriesBook } from '#components/library/Bookshelf'
+import {
+	BookCover,
+	BookshelfBook,
+	SeriesBook,
+} from '#components/library/Bookshelf'
 import { booksFromResponse } from '#components/library/Library'
+import { useReaderApp } from '#components/providers/ReaderProvider'
+import { downloadBookFile } from '#lib/library/book-file'
 import {
 	formatReadAt,
 	selectHistoryEntries,
 	sortBooks,
 } from '#lib/library/bookshelf'
 import type { HistoryEntry } from '#lib/library/bookshelf'
+import { listOfflineSaves, loadOfflineFile } from '#lib/library/offline-books'
+import type { OfflineSave } from '#lib/library/offline-books'
 import { fetchRecency } from '#lib/library/recency'
 import type { CloudBook } from '#lib/library/types'
 
@@ -141,6 +149,81 @@ const RecentBooksPreview = ({ books }: { books: CloudBook[] }) => {
 	)
 }
 
+const offlineOpenFailed =
+	'本をダウンロードできませんでした。通信状況を確認して、もう一度お試しください。'
+
+const OfflinePreview = () => {
+	const { setFile } = useReaderApp()
+	const [saves, setSaves] = useState<OfflineSave[]>([])
+	const [busyId, setBusyId] = useState('')
+	const [openError, setOpenError] = useState('')
+	const alive = useRef(true)
+	const pending = useRef<AbortController | null>(null)
+	useEffect(() => {
+		alive.current = true
+		void listOfflineSaves()
+			.catch(() => [])
+			.then((list) => {
+				if (alive.current) setSaves(list)
+			})
+		return () => {
+			alive.current = false
+			pending.current?.abort()
+		}
+	}, [])
+	const openSaved = async (book: CloudBook, signal: AbortSignal) => {
+		const saved = await loadOfflineFile(book.id).catch(() => undefined)
+		if (!alive.current || signal.aborted) return
+		if (saved) setFile(saved)
+		else setOpenError(offlineOpenFailed)
+	}
+	const openBook = async (book: CloudBook) => {
+		if (busyId) return
+		pending.current?.abort()
+		const controller = new AbortController()
+		pending.current = controller
+		setBusyId(book.id)
+		setOpenError('')
+		try {
+			const file = await downloadBookFile(book, controller.signal)
+			if (!alive.current || controller.signal.aborted) return
+			setFile(file)
+		} catch {
+			if (!alive.current || controller.signal.aborted) return
+			await openSaved(book, controller.signal)
+		} finally {
+			if (pending.current === controller) pending.current = null
+			setBusyId((current) => (current === book.id ? '' : current))
+		}
+	}
+	if (saves.length === 0) return null
+	return (
+		<section className={styles.preview} aria-labelledby="top-offline-heading">
+			<div className={styles.previewHead}>
+				<h2 id="top-offline-heading">後で読む</h2>
+				<span>{saves.length}冊</span>
+			</div>
+			<ul className={styles.previewGrid}>
+				{saves.map((save) => (
+					<li key={save.bookId}>
+						<BookshelfBook
+							book={{
+								id: save.bookId,
+								name: save.name,
+								format: save.format,
+								size: save.size,
+							}}
+							busyId={busyId}
+							openBook={(book) => void openBook(book)}
+						/>
+					</li>
+				))}
+			</ul>
+			{openError && <p role="alert">{openError}</p>}
+		</section>
+	)
+}
+
 function Home() {
 	const navigate = useNavigate()
 	const [books, setBooks] = useState<CloudBook[]>([])
@@ -210,6 +293,7 @@ function Home() {
 					</Link>
 				</p>
 			</section>
+			<OfflinePreview />
 			{loading ? (
 				<p>本を確認しています…</p>
 			) : listError === 'auth' ? (

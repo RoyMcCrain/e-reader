@@ -33,6 +33,7 @@ const paths: Record<string, ReactNode> = {
 			<path d="m17 9 3 3-3 3" />
 		</>
 	),
+	bookmark: <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />,
 	toc: (
 		<>
 			<path d="M8 6h12M8 12h12M8 18h12" />

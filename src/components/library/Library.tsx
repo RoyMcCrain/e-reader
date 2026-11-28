@@ -5,6 +5,7 @@ import type { RefObject } from 'react'
 import { Bookshelf, BookshelfBook } from '#components/library/Bookshelf'
 import { History } from '#components/library/History'
 import { useReaderApp } from '#components/providers/ReaderProvider'
+import { downloadBookFile } from '#lib/library/book-file'
 import { latestReadBook, sortBooks } from '#lib/library/bookshelf'
 import { parseAuthorName, validBookMetadata } from '#lib/library/metadata'
 import {
@@ -102,33 +103,13 @@ const loadBooks = async (
 	}
 }
 
-const mimeType = (format: CloudBook['format']) =>
-	format === 'epub' ? 'application/epub+zip' : 'application/zip'
-
-const downloadBlob = async (
-	book: CloudBook,
-	signal: AbortSignal,
-): Promise<Blob> => {
-	const response = await fetch(`/api/books/${encodeURIComponent(book.id)}`, {
-		credentials: 'same-origin',
-		signal,
-	})
-	const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
-	if (!response.ok || !contentType.includes(mimeType(book.format))) {
-		await response.body?.cancel()
-		throw new Error('download')
-	}
-	return response.blob()
-}
-
 const downloadBook = async (
 	book: CloudBook,
 	controller: AbortController,
 	setFile: (file: File) => void,
 ) => {
-	const blob = await downloadBlob(book, controller.signal)
-	if (!controller.signal.aborted)
-		setFile(new File([blob], book.name, { type: mimeType(book.format) }))
+	const file = await downloadBookFile(book, controller.signal)
+	if (!controller.signal.aborted) setFile(file)
 }
 
 interface LibraryStateProps {
@@ -277,7 +258,7 @@ const useOfflineSaves = (setDownloadError: (message: string) => void) => {
 		void settle(book.id, async () =>
 			saveOfflineBook(
 				book,
-				await downloadBlob(book, new AbortController().signal),
+				await downloadBookFile(book, new AbortController().signal),
 			),
 		)
 	const toggleSave = (book: CloudBook) => {
